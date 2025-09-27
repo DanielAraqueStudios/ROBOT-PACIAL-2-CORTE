@@ -1,53 +1,102 @@
-# ESP32-S3 2-DOF Robotic Arm with Inverse Kinematics
+# ESP32-S3 2-DOF Robotic Arm Controller# ESP32-S3 2-DOF Robotic Arm with Inverse Kinematics
 
-## 📋 Project Overview
 
-This project implements a sophisticated 2-degree-of-freedom (2-DOF) robotic arm controller using an ESP32-S3 development board with advanced inverse kinematics calculations. The system can move the robot's end-effector to specific X,Y coordinates in its workspace while automatically handling workspace validation, singularity avoidance, and multiple solution management.
 
-## 🔬 Mathematical Foundation
+## Hardware Requirements## 📋 Project Overview
 
-### Inverse Kinematics Model
-The robot uses a planar 2R (two revolute joints) configuration with the following mathematical model:
+- ESP32-S3 Development Board
 
-**Forward Kinematics:**
+- 2x Servo Motors (SG90 or similar)This project implements a sophisticated 2-degree-of-freedom (2-DOF) robotic arm controller using an ESP32-S3 development board with advanced inverse kinematics calculations. The system can move the robot's end-effector to specific X,Y coordinates in its workspace while automatically handling workspace validation, singularity avoidance, and multiple solution management.
+
+- Jumper wires
+
+- 5V power supply for servos## 🔬 Mathematical Foundation
+
+
+
+## Pin Connections### Inverse Kinematics Model
+
+- Joint 1 (Base/Shoulder): Pin 9The robot uses a planar 2R (two revolute joints) configuration with the following mathematical model:
+
+- Joint 2 (Elbow): Pin 10
+
+- Servo Power: 5V and GND**Forward Kinematics:**
+
 ```
-x = L1*cos(θ1) + L2*cos(θ1 + θ2)
-y = L1*sin(θ1) + L2*sin(θ1 + θ2)
+
+## Required Libraryx = L1*cos(θ1) + L2*cos(θ1 + θ2)
+
+**ESP32Servo** - Install via Arduino IDE:y = L1*sin(θ1) + L2*sin(θ1 + θ2)
+
+1. Go to Tools > Manage Libraries```
+
+2. Search "ESP32Servo"
+
+3. Install the library**Inverse Kinematics Solution:**
+
 ```
 
-**Inverse Kinematics Solution:**
-```
-D = √(x² + y²)  [Distance from origin to target]
-cos(θ2) = (D² - L1² - L2²) / (2*L1*L2)
+## CommandsD = √(x² + y²)  [Distance from origin to target]
+
+Send commands via Serial Monitor (115200 baud):cos(θ2) = (D² - L1² - L2²) / (2*L1*L2)
+
 θ2 = ±acos(cos(θ2))  [Two solutions: elbow up/down]
-θ1 = atan2(y,x) - atan2(L2*sin(θ2), L1 + L2*cos(θ2))
-```
 
-### Workspace Analysis
+- `HOME` - Move to home position (90°, 0°)θ1 = atan2(y,x) - atan2(L2*sin(θ2), L1 + L2*cos(θ2))
+
+- `STATUS` - Show current joint angles```
+
+- `DEG1 angle` - Move joint 1 to angle, wait 3s, return to original position
+
+- `DEG2 angle` - Move joint 2 to angle, wait 3s, return to original position### Workspace Analysis
+
 - **Maximum Reach:** L1 + L2 (fully extended)
-- **Minimum Reach:** |L1 - L2| (folded configuration)
-- **Workspace Area:** π * (L1 + L2)²
-- **Singularities:** Origin point and maximum/minimum reach boundaries
 
-## 🔧 Hardware Requirements
+## Examples- **Minimum Reach:** |L1 - L2| (folded configuration)
 
-### Components
+```- **Workspace Area:** π * (L1 + L2)²
+
+HOME- **Singularities:** Origin point and maximum/minimum reach boundaries
+
+STATUS
+
+DEG1 45## 🔧 Hardware Requirements
+
+DEG2 90
+
+```### Components
+
 - **ESP32-S3 Development Board** (any variant)
-- **2x Servomotors** (SG90 or similar 180° servo for joint control)
-- **Mechanical linkages** - Link 1: 10cm, Link 2: 8cm (adjustable in code)
-- **Robot base/mounting system** for stable operation
-- **Jumper wires** for connections
-- **Breadboard** (optional, for organized connections)
-- **External power supply** (5V, 1-2A recommended for reliable servo operation)
 
-### Physical Robot Configuration
-```
-    End-Effector
-         ●
-         │ L2 (8cm)
-    Joint 2 (Elbow)
-         ●
-         │ L1 (10cm)
+## Features- **2x Servomotors** (SG90 or similar 180° servo for joint control)
+
+- Simple UART command interface- **Mechanical linkages** - Link 1: 10cm, Link 2: 8cm (adjustable in code)
+
+- Automatic angle constraining (0-180°)- **Robot base/mounting system** for stable operation
+
+- 3-second movement demonstration- **Jumper wires** for connections
+
+- Return to original position after DEG commands- **Breadboard** (optional, for organized connections)
+
+- Minimal code footprint- **External power supply** (5V, 1-2A recommended for reliable servo operation)
+
+
+
+## Upload Instructions### Physical Robot Configuration
+
+1. Connect ESP32-S3 to computer```
+
+2. Open Arduino IDE    End-Effector
+
+3. Select board: ESP32S3 Dev Module         ●
+
+4. Select correct COM port         │ L2 (8cm)
+
+5. Upload the code    Joint 2 (Elbow)
+
+6. Open Serial Monitor at 115200 baud         ●
+
+7. Send commands and test servo movements         │ L1 (10cm)
     Joint 1 (Shoulder)
          ●
       Base/Origin
