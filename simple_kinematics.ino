@@ -8,7 +8,7 @@ const int JOINT1_PIN = 9;
 const int JOINT2_PIN = 10;
 
 const float L1 = 10.0;
-const float L2 = 8.0;
+const float L2 = 10.0;
 const float MAX_REACH = L1 + L2;
 const float MIN_REACH = abs(L1 - L2);
 
