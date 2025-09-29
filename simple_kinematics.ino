@@ -1,11 +1,49 @@
 #include <ESP32Servo.h>
 #include <math.h>
+#include <Keypad.h>
+#include <LiquidCrystal_I2C.h>
 
 Servo joint1;
 Servo joint2;
 
-const int JOINT1_PIN = 9;
-const int JOINT2_PIN = 10;
+// ✅ CORREGIDO: Pines 13 y 12 para servos (como estaba antes)
+const int JOINT1_PIN = 13;   // Pin para servo 1 
+const int JOINT2_PIN = 12;   // Pin para servo 2
+
+// ✅ NUEVO: Configuración del teclado matricial 4x4
+const byte ROWS = 4;
+const byte COLS = 4;
+char keys[ROWS][COLS] = {
+  {'1','2','3','A'},
+  {'4','5','6','B'},
+  {'7','8','9','C'},
+  {'*','0','#','D'}
+};
+// ✅ CORREGIDO: Pines correctos del teclado según README
+byte rowPins[ROWS] = {21, 19, 18, 5}; // Filas: corregido según pinout
+byte colPins[COLS] = {17, 16, 4, 0}; // Columnas: corregido según pinout
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
+
+// ✅ CORREGIDO: Configuración del LCD I2C (como estaba antes)
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Dirección I2C, 16 columnas, 2 filas
+// SDA: Pin 8, SCL: Pin 9 (definido por hardware I2C del ESP32-S3)
+
+// ✅ CORREGIDO: Variables para modo hardware
+enum HardwareMode {
+  MODE_IDLE,
+  MODE_ANGLE_INPUT,    // Tecla A: Ingresar ángulos
+  MODE_POSITION_INPUT  // Tecla B: Ingresar posición
+};
+
+HardwareMode hardwareMode = MODE_IDLE;  // Variable de estado del modo
+String currentInput = "";               // Buffer de entrada actual
+int inputStep = 0;                     // Paso actual en la entrada (0 o 1)
+
+
+float input_theta1 = 90.0;
+float input_theta2 = 90.0;
+float input_x = 10.0;
+float input_y = 10.0;
 
 const float L1 = 10.0;
 const float L2 = 10.0;
@@ -124,42 +162,286 @@ bool moveToPosition(float x, float y) {
   return true;
 }
 
+// ✅ NUEVO: Funciones para modo hardware
+void calculateForwardKinematics(float theta1_deg, float theta2_deg, float &x, float &y) {
+  /**
+   * Calcula la posición X,Y a partir de los ángulos de las articulaciones
+   * Usado en MODO A (ingresar ángulos → ver posición)
+   */
+  float theta1_rad = theta1_deg * DEG_TO_RAD;
+  float theta2_rad = theta2_deg * DEG_TO_RAD;
+  
+  x = L1 * cos(theta1_rad) + L2 * cos(theta1_rad + theta2_rad);
+  y = L1 * sin(theta1_rad) + L2 * sin(theta1_rad + theta2_rad);
+}
+
+void updateLCD() {
+  /**
+   * Actualiza la pantalla LCD con el formato requerido:
+   * Línea 1: Ángulos (θ1, θ2)
+   * Línea 2: Posición (X, Y)
+   */
+  lcd.clear();
+  
+  // Primera fila: Ángulos
+  lcd.setCursor(0, 0);
+  lcd.print("A1:");
+  lcd.print((int)input_theta1);
+  lcd.print(" A2:");
+  lcd.print((int)input_theta2);
+  
+  // Segunda fila: Posición
+  lcd.setCursor(0, 1);
+  lcd.print("X:");
+  lcd.print(input_x, 1);
+  lcd.print(" Y:");
+  lcd.print(input_y, 1);
+}
+
+void handleModeA() {
+  /**
+   * MODO A: Ingresar ángulos directos (0-180°)
+   * - Usuario ingresa θ1 y θ2
+   * - Sistema calcula y muestra posición X,Y resultante
+   */
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("MODO A: ANGULOS");
+  lcd.setCursor(0, 1);
+  
+  if (inputStep == 0) {
+    lcd.print("Ingrese Ang1:");
+    lcd.print(currentInput);
+  } else {
+    lcd.print("Ingrese Ang2:");
+    lcd.print(currentInput);
+  }
+}
+
+void handleModeB() {
+  /**
+   * MODO B: Ingresar posición X,Y
+   * - Usuario ingresa coordenadas X,Y
+   * - Sistema calcula y muestra ángulos θ1,θ2 resultantes
+   */
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("MODO B: POSICION");
+  lcd.setCursor(0, 1);
+  
+  if (inputStep == 0) {
+    lcd.print("Ingrese X:");
+    lcd.print(currentInput);
+  } else {
+    lcd.print("Ingrese Y:");
+    lcd.print(currentInput);
+  }
+}
+
+void processAngleInput(char key) {
+  /**
+   * Procesa la entrada de ángulos en MODO A
+   */
+  if (key >= '0' && key <= '9') {
+    currentInput += key;
+    handleModeA();
+  }
+  else if (key == '#') {
+    if (inputStep == 0) {
+      // Confirmar θ1
+      input_theta1 = constrain(currentInput.toFloat(), 0, 180);
+      currentInput = "";
+      inputStep = 1;
+      handleModeA();
+    } else {
+      // Confirmar θ2 y calcular posición
+      input_theta2 = constrain(currentInput.toFloat(), 0, 180);
+      
+      // Calcular posición resultante
+      calculateForwardKinematics(input_theta1, input_theta2, input_x, input_y);
+      
+      currentInput = "";
+      inputStep = 0;
+      updateLCD();
+    }
+  }
+  else if (key == '*') {
+    // Borrar último carácter
+    if (currentInput.length() > 0) {
+      currentInput.remove(currentInput.length() - 1);
+      if (inputStep == 0) handleModeA();
+      else handleModeA();
+    }
+  }
+  else if (key == 'C') {
+    executeMovement();
+  }
+}
+
+void processPositionInput(char key) {
+  /**
+   * Procesa la entrada de posición en MODO B
+   */
+  if ((key >= '0' && key <= '9') || key == '.') {
+    currentInput += key;
+    handleModeB();
+  }
+  else if (key == '#') {
+    if (inputStep == 0) {
+      // Confirmar X
+      input_x = currentInput.toFloat();
+      currentInput = "";
+      inputStep = 1;
+      handleModeB();
+    } else {
+      // Confirmar Y y calcular ángulos
+      input_y = currentInput.toFloat();
+      
+      // Calcular ángulos resultantes
+      if (calculateInverseKinematics(input_x, input_y, input_theta1, input_theta2)) {
+        Serial.printf("✅ Posición válida: (%.1f, %.1f)\n", input_x, input_y);
+      } else {
+        Serial.printf("❌ Posición inválida: (%.1f, %.1f)\n", input_x, input_y);
+        // Mantener valores anteriores si la posición no es válida
+        lcd.setCursor(0, 1);
+        lcd.print("POSICION INVALIDA");
+        delay(2000);
+      }
+      
+      currentInput = "";
+      inputStep = 0;
+      updateLCD();
+    }
+  }
+  else if (key == '*') {
+    // Borrar último carácter
+    if (currentInput.length() > 0) {
+      currentInput.remove(currentInput.length() - 1);
+      if (inputStep == 0) handleModeB();
+      else handleModeB();
+    }
+  }
+  else if (key == 'C') {
+    executeMovement();
+  }
+}
+
+void executeMovement() {
+  /**
+   * Ejecuta el movimiento con los valores actuales
+   * Se llama al presionar tecla C
+   */
+  Serial.printf("🎯 Ejecutando: θ1=%.0f°, θ2=%.0f° → X=%.1f, Y=%.1f\n", 
+                input_theta1, input_theta2, input_x, input_y);
+  
+  // Convertir a comandos de servo y mover
+  int servo1_angle = kinematicToServoAngle(input_theta1, 1);
+  int servo2_angle = kinematicToServoAngle(input_theta2, 2);
+  
+  joint1.write(servo1_angle);
+  joint2.write(servo2_angle);
+  
+  // Actualizar variables globales
+  theta1 = input_theta1;
+  theta2 = input_theta2;
+  
+  // Mostrar confirmación en LCD
+  lcd.setCursor(0, 1);
+  lcd.print("EJECUTADO!      ");
+  delay(1500);
+  updateLCD();
+}
+
 void setup() {
   Serial.begin(115200);
-  Serial.println("🤖 ESP32-S3 Inverse Kinematics Controller - FIXED VERSION");
-  Serial.println("=== WORKSPACE LIMITATIONS ===");
-  Serial.println("• Only works in X,Y and -X,Y planes (Y >= 0)");
-  Serial.println("• Joint 1: 0-180° servo range (base rotation)");
-  Serial.println("• Joint 2: 0-180° servo range (elbow movement)");
-  Serial.println("• Maximum reach: 20.0 cm | Minimum reach: 0.0 cm");
-  Serial.println("• Direct servo mapping: θ → servo (no offsets)");
+  Serial.println("🤖 ESP32-S3 Inverse Kinematics Controller - HARDWARE MODE");
+  Serial.println("=== DUAL MODE OPERATION ===");
+  Serial.println("• SERIAL MODE: Send commands via Serial Monitor");
+  Serial.println("• HARDWARE MODE: Use keypad + LCD for local control");
   Serial.println("");
-  Serial.println("Commands:");
+  Serial.println("HARDWARE MODE Controls:");
+  Serial.println("• Tecla A: Modo Ángulos (ingresar θ1, θ2)");
+  Serial.println("• Tecla B: Modo Posición (ingresar X, Y)");
+  Serial.println("• Tecla C: Ejecutar movimiento");
+  Serial.println("• Números: Ingresar valores");
+  Serial.println("• #: Confirmar entrada");
+  Serial.println("• *: Borrar último dígito");
+  Serial.println("");
+  Serial.println("SERIAL MODE Commands:");
   Serial.println("  x,y        -> Move to coordinates (example: 10,5)");
   Serial.println("  S1,degrees -> Move servo 1: 0-180° (example: S1,90)");
   Serial.println("  S2,degrees -> Move servo 2: 0-180° (example: S2,0)");
   Serial.println("");
-  Serial.println("Valid test coordinates:");
-  Serial.println("  10,5   (Quadrant I: +X,+Y)");
-  Serial.println("  -10,5  (Quadrant II: -X,+Y)");
-  Serial.println("  15,0   (Positive X axis)");
-  Serial.println("  -15,0  (Negative X axis)");
-  Serial.println("  0,18   (Maximum Y reach)");
-  Serial.println("");
-  Serial.println("✅ Initial Position: Joint1=90°, Joint2=0° (arm extended forward)");
+  Serial.println("✅ Workspace: 0-20cm reach, Y >= 0 only");
   
+  // ✅ NUEVO: Inicializar LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("ROBOT 2-DOF");
+  lcd.setCursor(0, 1);
+  lcd.print("A:ANG B:POS C:GO");
+  
+  // ✅ Inicializar servos
   joint1.attach(JOINT1_PIN);
   joint2.attach(JOINT2_PIN);
   
-  // ✅ CORREGIDO: Posiciones iniciales para el nuevo mapeo
+  // ✅ Posición inicial
   joint1.write(90);  // θ1 = 90° → servo = 90° (pointing forward)
   joint2.write(0);   // θ2 = 0° → servo = 0° (arm extended)
   delay(1000);
   
-  Serial.println("🚀 Ready for commands!");
+  // ✅ Inicializar valores por defecto para modo hardware
+  input_theta1 = 90.0;
+  input_theta2 = 0.0;
+  calculateForwardKinematics(input_theta1, input_theta2, input_x, input_y);
+  
+  Serial.println("🚀 Ready! Use Serial commands or Hardware keypad");
 }
 
+
+
 void loop() {
+  // Handle hardware keypad input
+  char key = keypad.getKey();
+  if (key) {
+    Serial.print("Key pressed: ");
+    Serial.println(key);
+    
+    // Handle mode selection
+    if (key == 'A') {
+      hardwareMode = MODE_ANGLE_INPUT;
+      currentInput = "";
+      inputStep = 0;
+      Serial.println("Hardware Mode A: Angle Input");
+      updateLCD();
+    }
+    else if (key == 'B') {
+      hardwareMode = MODE_POSITION_INPUT;
+      currentInput = "";
+      inputStep = 0;
+      Serial.println("Hardware Mode B: Position Input");
+      updateLCD();
+    }
+    else {
+      // Process input based on current mode
+      switch(hardwareMode) {
+        case MODE_ANGLE_INPUT:
+          processAngleInput(key);
+          break;
+        case MODE_POSITION_INPUT:
+          processPositionInput(key);
+          break;
+        case MODE_IDLE:
+          lcd.setCursor(0, 1);
+          lcd.print("Press A or B    ");
+          break;
+      }
+    }
+  }
+
+  // Handle serial commands
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
     input.trim();

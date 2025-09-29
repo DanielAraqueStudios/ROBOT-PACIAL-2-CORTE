@@ -104,18 +104,135 @@ DEG2 90
 
 ### Pin Connections
 
-| Component | ESP32-S3 Pin | Function | Wire Color (typical) |
-|-----------|--------------|----------|---------------------|
-| Joint 1 (Shoulder) | GPIO 9 | Base rotation control | Orange/Yellow |
-| Joint 2 (Elbow) | GPIO 10 | Elbow rotation control | Orange/Yellow |
-| Servo Power | 5V | Power supply | Red |
-| Servo Ground | GND | Common ground | Brown/Black |
+#### ESP32-S3 Pinout for Complete Hardware Setup
+
+| Component | ESP32-S3 Pin | Function | Wire Color (typical) | Notes |
+|-----------|--------------|----------|---------------------|-------|
+| **SERVO MOTORS** |
+| Joint 1 (Shoulder) | GPIO 13 | Base rotation control | Orange/Yellow | 0-180° range |
+| Joint 2 (Elbow) | GPIO 12 | Elbow rotation control | Orange/Yellow | 0-180° range |
+| Servo Power | 5V | Power supply | Red | External 5V/2A recommended |
+| Servo Ground | GND | Common ground | Brown/Black | Shared with system GND |
+| **MATRIX KEYPAD (4x4)** |
+| Row 1 | GPIO 21 | Keypad row scan | - | Keys: 1,2,3,A |
+| Row 2 | GPIO 19 | Keypad row scan | - | Keys: 4,5,6,B |
+| Row 3 | GPIO 18 | Keypad row scan | - | Keys: 7,8,9,C |
+| Row 4 | GPIO 5 | Keypad row scan | - | Keys: *,0,#,D |
+| Col 1 | GPIO 17 | Keypad column scan | - | Keys: 1,4,7,* |
+| Col 2 | GPIO 16 | Keypad column scan | - | Keys: 2,5,8,0 |
+| Col 3 | GPIO 4 | Keypad column scan | - | Keys: 3,6,9,# |
+| Col 4 | GPIO 0 | Keypad column scan | - | Keys: A,B,C,D |
+| **LCD I2C DISPLAY (16x2)** |
+| SDA | GPIO 8 | I2C Data line | - | Pull-up resistors included |
+| SCL | GPIO 9 | I2C Clock line | - | Pull-up resistors included |
+| VCC | 5V | LCD Power | Red | Can use 3.3V if available |
+| GND | GND | LCD Ground | Black | Shared with system GND |
+| **POWER CONNECTIONS** |
+| ESP32-S3 Power | USB/VIN | 5V input | - | USB for programming/power |
+| System Ground | GND | Common reference | Black | All components share |
+
+#### Hardware Mode Operation Pins Summary
+```
+📍 SERVO CONTROL:
+   • Servo 1 (Shoulder): Pin 13
+   • Servo 2 (Elbow):    Pin 12
+
+📍 KEYPAD MATRIX:
+   • Rows: 21, 19, 18, 5
+   • Cols: 17, 16, 4, 0
+
+📍 LCD I2C DISPLAY:
+   • SDA: Pin 8  (Data)
+   • SCL: Pin 9  (Clock)
+   • Address: 0x27
+```
+
+#### Physical Keypad Layout
+```
+┌─────┬─────┬─────┬─────┐
+│  1  │  2  │  3  │  A  │  ← Mode Selection (Angles)
+├─────┼─────┼─────┼─────┤
+│  4  │  5  │  6  │  B  │  ← Mode Selection (Positions)
+├─────┼─────┼─────┼─────┤
+│  7  │  8  │  9  │  C  │
+├─────┼─────┼─────┼─────┤
+│  *  │  0  │  #  │  D  │  ← * = Clear, # = Confirm
+└─────┴─────┴─────┴─────┘
+```
 
 ### Coordinate System
 - **Origin:** At the base joint (Joint 1)
 - **X-axis:** Horizontal, positive forward
 - **Y-axis:** Vertical, positive upward
 - **Angles:** Joint 1 measured from X-axis, Joint 2 relative to Link 1
+
+## 🎮 Hardware Mode (MODO HARDWARE)
+
+### Overview
+The robot now supports standalone operation using a 4x4 matrix keypad and 16x2 LCD display, eliminating the need for a computer connection during operation.
+
+### Hardware Mode Features
+- **🔢 Keypad Control:** Direct angle and position input via matrix keypad
+- **📺 LCD Display:** Real-time feedback showing current angles and positions
+- **🔄 Dual Input Modes:** 
+  - **Mode A:** Direct joint angle control (0-180°)
+  - **Mode B:** X,Y coordinate positioning (with automatic inverse kinematics)
+- **⚡ Instant Feedback:** LCD updates show current robot state
+- **🔁 Mode Switching:** Easy switching between input modes
+
+### Required Hardware Components (Hardware Mode)
+| Component | Quantity | Purpose |
+|-----------|----------|---------|
+| 4x4 Matrix Keypad | 1 | User input interface |
+| 16x2 LCD I2C Display | 1 | Status and feedback display |
+| I2C Module | 1 | LCD communication (usually built-in) |
+| Jumper Wires | 12+ | Connections |
+
+### Hardware Mode Operation
+
+#### Mode A: Angle Input (Press 'A')
+1. **Press 'A'** to enter angle input mode
+2. **Enter Joint 1 angle** (0-180) using number keys
+3. **Press '#'** to confirm Joint 1
+4. **Enter Joint 2 angle** (0-180) using number keys  
+5. **Press '#'** to confirm and execute movement
+6. **LCD Display:** Shows current joint angles
+
+#### Mode B: Position Input (Press 'B')
+1. **Press 'B'** to enter position input mode
+2. **Enter X coordinate** (0.0-20.0 cm) using number keys
+3. **Press '#'** to confirm X coordinate
+4. **Enter Y coordinate** (0.0-20.0 cm) using number keys
+5. **Press '#'** to confirm and execute movement
+6. **LCD Display:** Shows target and current positions
+
+#### LCD Display Format
+```
+Line 1: J1:XXX° J2:XXX°     [Current joint angles]
+Line 2: X:XX.X Y:XX.X       [Current end-effector position]
+```
+
+#### Keypad Functions
+- **Keys 0-9:** Numeric input and decimal points
+- **Key A:** Select Mode A (Angle Input)
+- **Key B:** Select Mode B (Position Input)  
+- **Key #:** Confirm/Execute current input
+- **Key *:** Clear current input/Cancel operation
+- **Keys C,D:** Reserved for future features
+
+### Hardware Mode Installation Steps
+1. **Connect Matrix Keypad:** Wire according to pinout table above
+2. **Connect LCD Display:** Use I2C connection (SDA/SCL + Power)
+3. **Install Libraries:** Ensure Keypad.h and LiquidCrystal_I2C.h are installed
+4. **Upload Code:** Flash the updated firmware with hardware mode
+5. **Test Operation:** Verify keypad response and LCD display
+6. **Calibrate:** Fine-tune I2C address if LCD doesn't respond (try 0x3F)
+
+### Hardware Mode Troubleshooting
+- **LCD not displaying:** Check I2C address (try 0x3F instead of 0x27)
+- **Keypad not responding:** Verify row/column pin connections
+- **Incorrect movements:** Ensure servo pin assignments match code (13,12)
+- **Display corruption:** Check power supply stability (min 5V/2A)
 
 ## 💾 Software Requirements
 
@@ -129,6 +246,10 @@ DEG2 90
 ### Required Libraries
 - **ESP32Servo** by Kevin Harrington
   - Tools → Manage Libraries → Search "ESP32Servo" → Install
+- **Keypad** by Mark Stanley, Alexander Brevig  
+  - Tools → Manage Libraries → Search "Keypad" → Install
+- **LiquidCrystal I2C** by Frank de Brabander
+  - Tools → Manage Libraries → Search "LiquidCrystal I2C" → Install
 
 ### Board Configuration
 - **Board:** ESP32S3 Dev Module (or your specific ESP32-S3 variant)
@@ -406,8 +527,50 @@ For technical issues or questions:
 
 This project is provided as educational material for embedded systems and robotics learning.
 
+## 📋 Complete Wiring Diagram Summary
+
+### ESP32-S3 Pin Assignment Reference
+```
+ESP32-S3 Development Board
+┌─────────────────────────────────────┐
+│  ┌─────┐    ┌─────────────────────┐  │
+│  │ USB │    │       ESP32-S3      │  │  
+│  └─────┘    │                     │  │
+│              │  0○ ← Col4 (Keypad)  │  │
+│              │  4○ ← Col3 (Keypad)  │  │
+│              │  5○ ← Row4 (Keypad)  │  │
+│              │  8○ ← SDA (LCD)      │  │
+│              │  9○ ← SCL (LCD)      │  │
+│              │ 12○ ← Servo 2        │  │
+│              │ 13○ ← Servo 1        │  │
+│              │ 16○ ← Col2 (Keypad)  │  │
+│              │ 17○ ← Col1 (Keypad)  │  │
+│              │ 18○ ← Row3 (Keypad)  │  │
+│              │ 19○ ← Row2 (Keypad)  │  │
+│              │ 21○ ← Row1 (Keypad)  │  │
+│              │                     │  │
+│              │ 5V○ → Power Rail     │  │
+│              │GND○ → Ground Rail    │  │
+│              └─────────────────────┘  │
+└─────────────────────────────────────┘
+
+Power Distribution:
+5V  → Servos VCC, LCD VCC
+GND → Servos GND, LCD GND, Keypad Common
+```
+
+### Connection Checklist
+- [ ] **Servo 1 (Shoulder):** Signal → Pin 13, Power → 5V, Ground → GND
+- [ ] **Servo 2 (Elbow):** Signal → Pin 12, Power → 5V, Ground → GND
+- [ ] **Keypad Rows:** 21, 19, 18, 5 (R1-R4)
+- [ ] **Keypad Columns:** 17, 16, 4, 0 (C1-C4)
+- [ ] **LCD I2C:** SDA → Pin 8, SCL → Pin 9, VCC → 5V, GND → GND
+- [ ] **Power Supply:** External 5V/2A recommended for stable servo operation
+- [ ] **Libraries Installed:** ESP32Servo, Keypad, LiquidCrystal_I2C
+- [ ] **Board Configuration:** ESP32S3 Dev Module selected in Arduino IDE
+
 ---
 
 **Last Updated:** September 2025  
-**Version:** 1.0  
+**Version:** 2.0 (Hardware Mode Implementation)  
 **Tested on:** ESP32-S3 Dev Module with Arduino IDE 2.x
