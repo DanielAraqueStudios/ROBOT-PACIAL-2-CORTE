@@ -1,141 +1,278 @@
-/*
- * ESP32-S3 2-DOF Robotic Arm Controller with Inverse Kinematics
+#include <ESP32Servo.h>/*
+
+#include <math.h> * ESP32-S3 2-DOF Robotic Arm Controller with Inverse Kinematics
+
  * Hardware: ESP32-S3 Development Board
- * Components: 2x Servomotors (SG90 or similar) for 2-DOF planar manipulator
- * Pin Connections:
+
+Servo joint1; * Components: 2x Servomotors (SG90 or similar) for 2-DOF planar manipulator
+
+Servo joint2; * Pin Connections:
+
  * - Joint 1 (Base): Pin 9    - Controls shoulder rotation
- * - Joint 2 (Elbow): Pin 10  - Controls elbow rotation
- * - Power: 5V and GND for servos
+
+const int JOINT1_PIN = 9; * - Joint 2 (Elbow): Pin 10  - Controls elbow rotation
+
+const int JOINT2_PIN = 10; * - Power: 5V and GND for servos
+
  * 
- * Functionality: 2    else if (command == "STATUS") {
-      Serial.println("📡 Received status request");
-      displayRobotStatus();
-    }
+
+const float L1 = 10.0; * Functionality: 2    else if (command == "STATUS") {
+
+const float L2 = 10.0;      Serial.println("📡 Received status request");
+
+const float MAX_REACH = L1 + L2;      displayRobotStatus();
+
+const float MIN_REACH = abs(L1 - L2);    }
+
     else if (command == "STOP") {
-      Serial.println("📡 Received emergency stop command");
-      stopAllServos();
+
+float theta1 = 0.0;      Serial.println("📡 Received emergency stop command");
+
+float theta2 = 0.0;      stopAllServos();
+
     }
-    else if (command.startsWith("CONFIG ")) {robotic arm with inverse kinematics calculations
- * Features: Workspace validation, singularity avoidance, multiple solution handling
- * 
- * REQUIRED LIBRARY: ESP32Servo
+
+bool isPositionReachable(float x, float y) {    else if (command.startsWith("CONFIG ")) {robotic arm with inverse kinematics calculations
+
+  float distance = sqrt(x*x + y*y); * Features: Workspace validation, singularity avoidance, multiple solution handling
+
+  return (distance <= MAX_REACH && distance >= MIN_REACH && distance > 0.001); * 
+
+} * REQUIRED LIBRARY: ESP32Servo
+
  * Install via: Arduino IDE -> Tools -> Manage Libraries -> Search "ESP32Servo" -> Install
- * 
- * KINEMATIC MODEL:
- * - Link 1 Length (L1): Shoulder to elbow length
- * - Link 2 Length (L2): Elbow to end-effector length
- * - Joint 1 (θ1): Base rotation angle (shoulder)
- * - Joint 2 (θ2): Elbow rotation angle
- * - Coordinate System: Origin at base, X-axis forward, Y-axis up
- */
 
-#include <ESP32Servo.h>  // ESP32-compatible servo library
-#include <math.h>        // Mathematical functions for kinematics
+bool calculateInverseKinematics(float target_x, float target_y, float &theta1_deg, float &theta2_deg) { * 
 
-// ========================= ROBOT CONFIGURATION =========================
-// Robotic Arm Physical Parameters (in centimeters)
-const float L1 = 10.0;  // Link 1 length (shoulder to elbow) - ADJUST FOR YOUR ROBOT
-const float L2 = 8.0;   // Link 2 length (elbow to end-effector) - ADJUST FOR YOUR ROBOT
+  if (!isPositionReachable(target_x, target_y)) { * KINEMATIC MODEL:
 
-// Servo Motor Objects
-Servo joint1;  // Base/Shoulder joint servo
-Servo joint2;  // Elbow joint servo
+    Serial.println("Position not reachable!"); * - Link 1 Length (L1): Shoulder to elbow length
 
-// Pin definitions for 2-DOF robotic arm
-const int JOINT1_PIN = 9;   // Base joint (shoulder) connected to pin 9
-const int JOINT2_PIN = 10;  // Elbow joint connected to pin 10
+    return false; * - Link 2 Length (L2): Elbow to end-effector length
 
-// Servo angle constraints (in degrees)
-const int JOINT1_MIN = 0;    // Minimum angle for joint 1
+  } * - Joint 1 (θ1): Base rotation angle (shoulder)
+
+   * - Joint 2 (θ2): Elbow rotation angle
+
+  float D = sqrt(target_x*target_x + target_y*target_y); * - Coordinate System: Origin at base, X-axis forward, Y-axis up
+
+  float cos_theta2 = (D*D - L1*L1 - L2*L2) / (2.0 * L1 * L2); */
+
+  
+
+  if (cos_theta2 < -1.0 || cos_theta2 > 1.0) {#include <ESP32Servo.h>  // ESP32-compatible servo library
+
+    Serial.println("No solution exists!");#include <math.h>        // Mathematical functions for kinematics
+
+    return false;
+
+  }// ========================= ROBOT CONFIGURATION =========================
+
+  // Robotic Arm Physical Parameters (in centimeters)
+
+  float theta2_rad = acos(cos_theta2);const float L1 = 10.0;  // Link 1 length (shoulder to elbow) - ADJUST FOR YOUR ROBOT
+
+  float alpha = atan2(target_y, target_x);const float L2 = 8.0;   // Link 2 length (elbow to end-effector) - ADJUST FOR YOUR ROBOT
+
+  float beta = atan2(L2 * sin(theta2_rad), L1 + L2 * cos(theta2_rad));
+
+  float theta1_rad = alpha - beta;// Servo Motor Objects
+
+  Servo joint1;  // Base/Shoulder joint servo
+
+  theta1_deg = theta1_rad * RAD_TO_DEG;Servo joint2;  // Elbow joint servo
+
+  theta2_deg = theta2_rad * RAD_TO_DEG;
+
+  // Pin definitions for 2-DOF robotic arm
+
+  while (theta1_deg < 0) theta1_deg += 360;const int JOINT1_PIN = 9;   // Base joint (shoulder) connected to pin 9
+
+  while (theta1_deg >= 360) theta1_deg -= 360;const int JOINT2_PIN = 10;  // Elbow joint connected to pin 10
+
+  
+
+  return true;// Servo angle constraints (in degrees)
+
+}const int JOINT1_MIN = 0;    // Minimum angle for joint 1
+
 const int JOINT1_MAX = 180;  // Maximum angle for joint 1
-const int JOINT2_MIN = 0;    // Minimum angle for joint 2
-const int JOINT2_MAX = 180;  // Maximum angle for joint 2
 
-// Servo offset calibration (adjust for your specific servos)
-const int JOINT1_OFFSET = 0;   // Offset to center joint 1 at 0 degrees (changed from 90)
-const int JOINT2_OFFSET = 0;   // Offset to center joint 2 at 0 degrees (changed from 90)
+int kinematicToServoAngle(float kinematic_angle, int joint_number) {const int JOINT2_MIN = 0;    // Minimum angle for joint 2
 
-// Servo control parameters
-const int SERVO1_CENTER = 90;  // Center position for servo 1 (stops continuous rotation)
-const int SERVO2_CENTER = 90;  // Center position for servo 2
+  int servo_angle;const int JOINT2_MAX = 180;  // Maximum angle for joint 2
+
+  
+
+  if (joint_number == 1) {// Servo offset calibration (adjust for your specific servos)
+
+    servo_angle = (int)(kinematic_angle * 0.5) + 90;const int JOINT1_OFFSET = 0;   // Offset to center joint 1 at 0 degrees (changed from 90)
+
+  } else {const int JOINT2_OFFSET = 0;   // Offset to center joint 2 at 0 degrees (changed from 90)
+
+    servo_angle = (int)(kinematic_angle) + 90;
+
+  }// Servo control parameters
+
+  const int SERVO1_CENTER = 90;  // Center position for servo 1 (stops continuous rotation)
+
+  return constrain(servo_angle, 0, 180);const int SERVO2_CENTER = 90;  // Center position for servo 2
+
+}
 
 // ========================= KINEMATIC VARIABLES =========================
-// Current joint angles (in degrees)
-float theta1 = 0.0;  // Joint 1 angle (base/shoulder)
-float theta2 = 0.0;  // Joint 2 angle (elbow)
 
-// Target position variables
-float target_x = 0.0;  // Target X coordinate
-float target_y = 0.0;  // Target Y coordinate
+bool moveToPosition(float x, float y) {// Current joint angles (in degrees)
 
-// Workspace limits
-const float MAX_REACH = L1 + L2;  // Maximum reachable distance
-const float MIN_REACH = abs(L1 - L2);  // Minimum reachable distance
+  Serial.printf("Moving to: (%.2f, %.2f)\n", x, y);float theta1 = 0.0;  // Joint 1 angle (base/shoulder)
 
-// Solution selection preference
-enum SolutionType {
-  ELBOW_UP,    // Prefer elbow-up configuration
-  ELBOW_DOWN,  // Prefer elbow-down configuration
-  CLOSEST      // Choose solution closest to current position
-};
-SolutionType preferred_solution = ELBOW_UP;
+  float theta2 = 0.0;  // Joint 2 angle (elbow)
 
-// ========================= MATHEMATICAL CONSTANTS =========================
-// Using ESP32 built-in mathematical constants
-// PI, DEG_TO_RAD, and RAD_TO_DEG are already defined in Arduino.h
-const float EPSILON = 0.001;  // Small value for numerical comparisons
+  float new_theta1, new_theta2;
 
-// ========================= INVERSE KINEMATICS FUNCTIONS =========================
+  if (!calculateInverseKinematics(x, y, new_theta1, new_theta2)) {// Target position variables
 
-/*
- * INVERSE KINEMATICS MATHEMATICAL MODEL:
- * 
- * Given target position (x, y), calculate joint angles (θ1, θ2)
- * 
- * Equations:
- * x = L1*cos(θ1) + L2*cos(θ1 + θ2)
- * y = L1*sin(θ1) + L2*sin(θ1 + θ2)
- * 
- * Solution using Law of Cosines:
- * D = sqrt(x² + y²)  [Distance from origin to target]
- * 
- * cos(θ2) = (D² - L1² - L2²) / (2*L1*L2)
- * θ2 = ±acos(cos(θ2))  [Two solutions: elbow up/down]
- * 
+    return false;float target_x = 0.0;  // Target X coordinate
+
+  }float target_y = 0.0;  // Target Y coordinate
+
+  
+
+  Serial.printf("Joint angles: θ1=%.2f°, θ2=%.2f°\n", new_theta1, new_theta2);// Workspace limits
+
+  const float MAX_REACH = L1 + L2;  // Maximum reachable distance
+
+  int servo1_angle = kinematicToServoAngle(new_theta1, 1);const float MIN_REACH = abs(L1 - L2);  // Minimum reachable distance
+
+  int servo2_angle = kinematicToServoAngle(new_theta2, 2);
+
+  // Solution selection preference
+
+  Serial.printf("Servo commands: S1=%d°, S2=%d°\n", servo1_angle, servo2_angle);enum SolutionType {
+
+    ELBOW_UP,    // Prefer elbow-up configuration
+
+  joint1.write(servo1_angle);  ELBOW_DOWN,  // Prefer elbow-down configuration
+
+  joint2.write(servo2_angle);  CLOSEST      // Choose solution closest to current position
+
+  };
+
+  theta1 = new_theta1;SolutionType preferred_solution = ELBOW_UP;
+
+  theta2 = new_theta2;
+
+  // ========================= MATHEMATICAL CONSTANTS =========================
+
+  Serial.println("Movement complete!");// Using ESP32 built-in mathematical constants
+
+  return true;// PI, DEG_TO_RAD, and RAD_TO_DEG are already defined in Arduino.h
+
+}const float EPSILON = 0.001;  // Small value for numerical comparisons
+
+
+
+void setup() {// ========================= INVERSE KINEMATICS FUNCTIONS =========================
+
+  Serial.begin(115200);
+
+  Serial.println("ESP32-S3 Inverse Kinematics Controller");/*
+
+  Serial.println("Commands:"); * INVERSE KINEMATICS MATHEMATICAL MODEL:
+
+  Serial.println("  x,y        -> Move to coordinates (example: 12.5,8.3)"); * 
+
+  Serial.println("  S1,degrees -> Move servo 1 (example: S1,90)"); * Given target position (x, y), calculate joint angles (θ1, θ2)
+
+  Serial.println("  S2,degrees -> Move servo 2 (example: S2,45)"); * 
+
+   * Equations:
+
+  joint1.attach(JOINT1_PIN); * x = L1*cos(θ1) + L2*cos(θ1 + θ2)
+
+  joint2.attach(JOINT2_PIN); * y = L1*sin(θ1) + L2*sin(θ1 + θ2)
+
+   * 
+
+  joint1.write(90); * Solution using Law of Cosines:
+
+  joint2.write(90); * D = sqrt(x² + y²)  [Distance from origin to target]
+
+  delay(1000); * 
+
+   * cos(θ2) = (D² - L1² - L2²) / (2*L1*L2)
+
+  Serial.println("Ready for commands!"); * θ2 = ±acos(cos(θ2))  [Two solutions: elbow up/down]
+
+} * 
+
  * θ1 = atan2(y, x) - atan2(L2*sin(θ2), L1 + L2*cos(θ2))
- */
 
-struct InverseKinematicsSolution {
-  bool valid;           // Solution validity flag
-  float theta1_deg;     // Joint 1 angle in degrees
-  float theta2_deg;     // Joint 2 angle in degrees
-  float error;          // Solution error metric
-  String config_type;   // "ELBOW_UP" or "ELBOW_DOWN"
-};
+void loop() { */
 
-// Workspace validation function
-bool isPositionReachable(float x, float y) {
-  float distance = sqrt(x*x + y*y);
-  
-  // Check if position is within workspace boundaries
-  if (distance > MAX_REACH + EPSILON) {
-    Serial.println("❌ Position beyond maximum reach");
-    return false;
-  }
-  
-  if (distance < MIN_REACH - EPSILON) {
-    Serial.println("❌ Position too close (below minimum reach)");
-    return false;
-  }
-  
-  // Check for singularities (near-zero configurations)
-  if (distance < EPSILON) {
-    Serial.println("❌ Position at origin (singularity)");
-    return false;
-  }
-  
-  return true;
-}
+  if (Serial.available() > 0) {
+
+    String input = Serial.readStringUntil('\n');struct InverseKinematicsSolution {
+
+    input.trim();  bool valid;           // Solution validity flag
+
+      float theta1_deg;     // Joint 1 angle in degrees
+
+    // Check for servo commands (S1,degrees or S2,degrees)  float theta2_deg;     // Joint 2 angle in degrees
+
+    if (input.startsWith("S1,")) {  float error;          // Solution error metric
+
+      int degrees = input.substring(3).toInt();  String config_type;   // "ELBOW_UP" or "ELBOW_DOWN"
+
+      degrees = constrain(degrees, 0, 180);};
+
+      joint1.write(degrees);
+
+      Serial.printf("Servo 1 moved to: %d degrees\n", degrees);// Workspace validation function
+
+    }bool isPositionReachable(float x, float y) {
+
+    else if (input.startsWith("S2,")) {  float distance = sqrt(x*x + y*y);
+
+      int degrees = input.substring(3).toInt();  
+
+      degrees = constrain(degrees, 0, 180);  // Check if position is within workspace boundaries
+
+      joint2.write(degrees);  if (distance > MAX_REACH + EPSILON) {
+
+      Serial.printf("Servo 2 moved to: %d degrees\n", degrees);    Serial.println("❌ Position beyond maximum reach");
+
+    }    return false;
+
+    // Check for coordinate commands (x,y)  }
+
+    else {  
+
+      int comma = input.indexOf(',');  if (distance < MIN_REACH - EPSILON) {
+
+      if (comma > 0) {    Serial.println("❌ Position too close (below minimum reach)");
+
+        float x = input.substring(0, comma).toFloat();    return false;
+
+        float y = input.substring(comma + 1).toFloat();  }
+
+        moveToPosition(x, y);  
+
+      } else {  // Check for singularities (near-zero configurations)
+
+        Serial.println("Invalid format!");  if (distance < EPSILON) {
+
+        Serial.println("Use: x,y (coordinates) or S1,degrees or S2,degrees");    Serial.println("❌ Position at origin (singularity)");
+
+        Serial.println("Examples: 12.5,8.3 or S1,90 or S2,45");    return false;
+
+      }  }
+
+    }  
+
+  }  return true;
+
+}}
 
 // Calculate inverse kinematics with multiple solutions
 InverseKinematicsSolution calculateInverseKinematics(float target_x, float target_y, bool elbow_up) {

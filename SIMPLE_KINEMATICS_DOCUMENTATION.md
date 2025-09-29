@@ -25,34 +25,67 @@ GND         →     Servo GND (both servos)
 
 ## Robot Configuration
 - **Link 1 Length (L1)**: 10.0 cm (shoulder to elbow)
-- **Link 2 Length (L2)**: 8.0 cm (elbow to end-effector)  
-- **Maximum Reach**: 18.0 cm (L1 + L2)
-- **Minimum Reach**: 2.0 cm (|L1 - L2|)
+- **Link 2 Length (L2)**: 10.0 cm (elbow to end-effector)  
+- **Maximum Reach**: 20.0 cm (L1 + L2)
+- **Minimum Reach**: 0.0 cm (|L1 - L2|)
 - **Coordinate System**: Origin at base, X-axis forward, Y-axis up
 
 ## Usage Instructions
 
 ### 1. Setup
-1. Upload `simple_kinematics.ino` to your ESP32-S3
+1. Upload `main.ino` to your ESP32-S3
 2. Open Serial Monitor at **115200 baud**
-3. Wait for "Ready for coordinates!" message
+3. Wait for "Ready for commands!" message
 
-### 2. Input Format
-Simply send X,Y coordinates separated by a comma:
+### 2. Input Commands
+The controller accepts **3 types of commands**:
+
+#### A) Coordinate Movement (Inverse Kinematics)
 ```
 12.5,8.3    → Move to X=12.5cm, Y=8.3cm
 10,5        → Move to X=10cm, Y=5cm
 15,0        → Move to X=15cm, Y=0cm
-0,18        → Move to maximum Y reach
+0,20        → Move to maximum Y reach
+```
+
+#### B) Individual Servo Control
+```
+S1,90       → Move Servo 1 (base/shoulder) to 90 degrees
+S1,45       → Move Servo 1 to 45 degrees
+S1,0        → Move Servo 1 to 0 degrees
+```
+
+```
+S2,90       → Move Servo 2 (elbow) to 90 degrees  
+S2,135      → Move Servo 2 to 135 degrees
+S2,45       → Move Servo 2 to 45 degrees
 ```
 
 ### 3. System Response
-For each command, the system provides:
+#### For coordinate commands:
 ```
 Moving to: (12.50, 8.30)
 Joint angles: θ1=45.23°, θ2=67.89°
 Servo commands: S1=112°, S2=158°
 Movement complete!
+```
+
+#### For servo commands:
+```
+Servo 1 moved to: 90 degrees
+```
+or
+```
+Servo 2 moved to: 45 degrees
+```
+
+#### Mixed Usage Example:
+```
+S1,45       → Move base servo to 45°
+S2,90       → Move elbow servo to 90° 
+12,8        → Move to coordinates (12,8) using inverse kinematics
+S1,0        → Return base servo to 0°
+10,10       → Move to coordinates (10,10)
 ```
 
 ## Mathematical Model
@@ -80,8 +113,8 @@ The system uses the following mathematical approach:
 
 ### Workspace Validation
 The system automatically validates that requested positions are:
-- Within maximum reach (≤ 18.0 cm)
-- Above minimum reach (≥ 2.0 cm)  
+- Within maximum reach (≤ 20.0 cm)
+- Above minimum reach (≥ 0.0 cm)  
 - Not at origin (singularity avoidance)
 
 ## Code Structure
@@ -102,16 +135,17 @@ The system automatically validates that requested positions are:
 ### Safe Test Coordinates
 ```
 10,5        → Mid-range position
-15,0        → Maximum X reach
-0,15        → Maximum Y reach
+15,0        → High X reach
+0,15        → High Y reach
 12,8        → Diagonal position
-8,10        → Elbow-up configuration
+8,10        → Another diagonal
+S1,90       → Move base to 90°
+S2,45       → Move elbow to 45°
 ```
 
 ### Invalid Positions (Will be rejected)
 ```
-20,0        → Beyond maximum reach
-1,1         → Below minimum reach  
+25,0        → Beyond maximum reach (>20cm)
 0,0         → At origin (singularity)
 ```
 
@@ -131,9 +165,11 @@ If servos don't reach expected positions:
 
 ## Communication Protocol
 - **Baud Rate**: 115200
-- **Format**: Plain text, comma-separated
+- **Coordinate Format**: `x,y` (comma-separated, no spaces)
+- **Servo Format**: `S1,degrees` or `S2,degrees`
 - **Terminator**: Newline character (\n)
-- **No command prefix required**: Just send coordinates directly
+- **Range**: Servo commands constrained to 0-180 degrees
+- **Examples**: `12.5,8.3` or `S1,90` or `S2,45`
 
 ## Extensions
 This basic controller can be extended with:

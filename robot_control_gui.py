@@ -58,13 +58,13 @@ from matplotlib.figure import Figure
 class RobotConfig:
     """Robot configuration parameters"""
     L1: float = 10.0  # Link 1 length (cm)
-    L2: float = 8.0   # Link 2 length (cm)
-    max_reach: float = 18.0
-    min_reach: float = 2.0
+    L2: float = 10.0  # Link 2 length (cm) - UPDATED to match simple_kinematics.ino
+    max_reach: float = 20.0  # UPDATED: L1 + L2 = 20.0
+    min_reach: float = 0.0   # UPDATED: abs(L1 - L2) = 0.0
     joint1_min: int = 0
     joint1_max: int = 180
-    joint2_min: int = -90
-    joint2_max: int = 90
+    joint2_min: int = 0      # UPDATED: Physical servo limitation
+    joint2_max: int = 180     # UPDATED: Servo 2 full range 0-180° (NOT limited)
 
 @dataclass
 class Position:
@@ -146,7 +146,7 @@ class WorkspaceCanvas(FigureCanvas):
         
         # Current robot state
         self.current_position = Position(0, robot_config.L1 + robot_config.L2)
-        self.current_angles = [90.0, 0.0]  # theta1, theta2
+        self.current_angles = [90.0, 90.0]  # theta1, theta2 - FIXED: Both joints at center
         self.target_position = None
         
         # Plot elements
@@ -159,14 +159,14 @@ class WorkspaceCanvas(FigureCanvas):
         self.draw_robot()
     
     def setup_plot(self):
-        """Setup plot appearance"""
-        self.ax.set_xlim(-20, 20)
-        self.ax.set_ylim(-5, 20)
+        """Setup plot appearance - UPDATED for simple_kinematics.ino (max_reach=20, Y>=0)"""
+        self.ax.set_xlim(-22, 22)  # Increased for max_reach=20
+        self.ax.set_ylim(-1, 22)   # Changed to show Y>=0 with small negative margin for axis
         self.ax.set_aspect('equal')
         self.ax.grid(True, alpha=0.3, color='white')
         self.ax.set_xlabel('X (cm)', color='white', fontsize=12)
-        self.ax.set_ylabel('Y (cm)', color='white', fontsize=12)
-        self.ax.set_title('2-DOF Robot Workspace', color='white', fontsize=14, fontweight='bold')
+        self.ax.set_ylabel('Y (cm) - Only Y ≥ 0 supported', color='white', fontsize=12)  # Added constraint note
+        self.ax.set_title('2-DOF Robot Workspace (L1=10cm, L2=10cm)', color='white', fontsize=14, fontweight='bold')
         
         # Style axes
         self.ax.tick_params(colors='white')
@@ -174,6 +174,9 @@ class WorkspaceCanvas(FigureCanvas):
         self.ax.spines['top'].set_color('white')
         self.ax.spines['right'].set_color('white')
         self.ax.spines['left'].set_color('white')
+        
+        # Add Y=0 line to show constraint
+        self.ax.axhline(y=0, color='red', linestyle='--', alpha=0.7, label='Y=0 limit')
     
     def draw_workspace(self):
         """Draw robot workspace boundaries"""
@@ -647,14 +650,14 @@ class RobotControlGUI(QMainWindow):
         # Joint 2 controls
         joint_layout.addWidget(QLabel("Joint 2 (Elbow):"), 1, 0)
         self.joint2_slider = QSlider(Qt.Orientation.Horizontal)
-        self.joint2_slider.setRange(-90, 90)
-        self.joint2_slider.setValue(0)
+        self.joint2_slider.setRange(0, 180)    # FIXED: Full servo range 0-180°
+        self.joint2_slider.setValue(90)        # FIXED: Center position for 0-180°
         self.joint2_slider.valueChanged.connect(self.joint2_changed)
         joint_layout.addWidget(self.joint2_slider, 1, 1)
         
         self.joint2_value = QSpinBox()
-        self.joint2_value.setRange(-90, 90)
-        self.joint2_value.setValue(0)
+        self.joint2_value.setRange(0, 180)     # FIXED: Full servo range 0-180°
+        self.joint2_value.setValue(90)         # FIXED: Center position for 0-180°
         self.joint2_value.setSuffix("°")
         self.joint2_value.valueChanged.connect(self.joint2_spin_changed)
         joint_layout.addWidget(self.joint2_value, 1, 2)
@@ -674,11 +677,11 @@ class RobotControlGUI(QMainWindow):
         self.x_position.setSuffix(" cm")
         position_layout.addWidget(self.x_position, 0, 1)
         
-        # Y coordinate
+        # Y coordinate - UPDATED: Only Y >= 0 allowed (simple_kinematics.ino constraint)
         position_layout.addWidget(QLabel("Y Position:"), 1, 0)
         self.y_position = QDoubleSpinBox()
-        self.y_position.setRange(-5.0, 20.0)
-        self.y_position.setValue(18.0)
+        self.y_position.setRange(0.0, 20.0)  # Changed from -5.0 to 0.0 (Y >= 0 only)
+        self.y_position.setValue(10.0)       # Changed default to positive value
         self.y_position.setDecimals(1)
         self.y_position.setSuffix(" cm")
         position_layout.addWidget(self.y_position, 1, 1)
@@ -689,7 +692,7 @@ class RobotControlGUI(QMainWindow):
         position_layout.addWidget(self.move_to_position_btn, 2, 0, 1, 2)
         
         # Current position display
-        self.current_pos_label = QLabel("Current: (0.0, 18.0) cm")
+        self.current_pos_label = QLabel("Current: (0.0, 20.0) cm")  # FIXED: Max reach is 20.0
         self.current_pos_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
         position_layout.addWidget(self.current_pos_label, 3, 0, 1, 2)
         
@@ -699,14 +702,14 @@ class RobotControlGUI(QMainWindow):
         quick_group = QGroupBox("Quick Positions")
         quick_layout = QGridLayout(quick_group)
         
-        # Pre-defined positions
+        # Pre-defined positions - UPDATED for simple_kinematics.ino (L1=10, L2=10, Y>=0)
         positions = [
-            ("🏠 Home", 0, 18),
-            ("👈 Left", -10, 10),
-            ("👉 Right", 10, 10),
-            ("⬆️ Up", 0, 15),
-            ("⬇️ Down", 0, 8),
-            ("🔄 Center", 12, 8)
+            ("🏠 Home", 0, 20),      # Maximum Y reach
+            ("👈 Left", -15, 10),    # Left side, Y positive
+            ("👉 Right", 15, 10),    # Right side, Y positive  
+            ("⬆️ Up", 0, 18),        # High Y position
+            ("⬇️ Down", 0, 5),       # Low Y but still positive
+            ("🔄 Center", 10, 10)    # Balanced position
         ]
         
         for i, (name, x, y) in enumerate(positions):
@@ -1041,14 +1044,21 @@ class RobotControlGUI(QMainWindow):
         self.joint2_slider.setValue(value)
     
     def send_joint_command(self, joint: int, angle: int):
-        """Send joint angle command to robot"""
-        command = f"JOINT{joint}:{angle}"
+        """Send joint angle command to robot - Updated for simple_kinematics.ino format"""
+        command = f"S{joint},{angle}"  # Changed from JOINT{joint}:{angle} to S{joint},{angle}
         self.serial_comm.send_command(command)
     
     def move_to_position(self):
-        """Move robot to specified position"""
+        """Move robot to specified position - Updated for simple_kinematics.ino format"""
         x = self.x_position.value()
         y = self.y_position.value()
+        
+        # UPDATED: Check for Y >= 0 constraint (simple_kinematics.ino only supports Y >= 0)
+        if y < 0:
+            QMessageBox.warning(self, "Warning", 
+                "Negative Y coordinates not supported!\n"
+                "Only positive Y coordinates are allowed (Y >= 0)")
+            return
         
         if self.workspace_check.isChecked():
             if not self.workspace_canvas.is_position_reachable(x, y):
@@ -1057,9 +1067,9 @@ class RobotControlGUI(QMainWindow):
                     f"Valid range: {self.robot_config.min_reach:.1f} - {self.robot_config.max_reach:.1f} cm")
                 return
         
-        # Send position command to robot
+        # Send position command to robot - UPDATED format: just "x,y" instead of "MOVE:x,y"
         if self.serial_comm.is_connected:
-            command = f"MOVE:{x:.1f},{y:.1f}"
+            command = f"{x:.1f},{y:.1f}"  # Changed from MOVE:x,y to x,y
             self.serial_comm.send_command(command)
         
         # Update visualization
@@ -1139,57 +1149,61 @@ class RobotControlGUI(QMainWindow):
                 self.status_labels["workspace"].setText("❌ Invalid")
                 self.status_labels["workspace"].setStyleSheet("color: #F44336; font-weight: bold;")
     
-    # Demo functions
+    # Demo functions - UPDATED for simple_kinematics.ino compatibility
     def start_basic_demo(self):
-        """Start basic demo sequence"""
+        """Start basic demo sequence - Using simple coordinate commands"""
         if self.serial_comm.is_connected:
-            self.serial_comm.send_command("DEMO:BASIC")
-            self.status_bar.showMessage("Starting basic demo...")
+            # Instead of DEMO:BASIC, send simple movements
+            self.serial_comm.send_command("10.0,10.0")  # Move to center position
+            self.status_bar.showMessage("Starting basic demo - moving to center...")
     
     def start_square_demo(self):
-        """Start square path demo"""
+        """Start square path demo - Updated positions for Y >= 0"""
         positions = [(10, 10), (15, 10), (15, 15), (10, 15), (10, 10)]
         self.execute_path_demo(positions, "Square Path")
     
     def start_circle_demo(self):
-        """Start circle path demo"""
-        center_x, center_y = 12, 10
+        """Start circle path demo - Adjusted for Y >= 0"""
+        center_x, center_y = 10, 12  # Moved center up to keep Y positive
         radius = 4
         positions = []
         for angle in range(0, 361, 30):
             x = center_x + radius * math.cos(math.radians(angle))
             y = center_y + radius * math.sin(math.radians(angle))
-            positions.append((x, y))
+            if y >= 0:  # Only include positions with Y >= 0
+                positions.append((x, y))
         self.execute_path_demo(positions, "Circle Path")
     
     def start_wave_demo(self):
-        """Start wave pattern demo"""
+        """Start wave pattern demo - Adjusted for Y >= 0"""
         positions = []
         for x in range(8, 17):
-            y = 10 + 3 * math.sin(x * 0.5)
-            positions.append((x, y))
+            y = 12 + 3 * math.sin(x * 0.5)  # Raised baseline to keep Y positive
+            if y >= 0:  # Ensure Y >= 0
+                positions.append((x, y))
         self.execute_path_demo(positions, "Wave Pattern")
     
     def start_workspace_demo(self):
-        """Start workspace boundary demo"""
+        """Start workspace boundary demo - Using coordinate commands"""
         if self.serial_comm.is_connected:
-            self.serial_comm.send_command("DEMO:WORKSPACE")
-            self.status_bar.showMessage("Starting workspace demo...")
+            # Send maximum reach position instead of DEMO:WORKSPACE
+            self.serial_comm.send_command("0.0,20.0")  # Move to max Y position
+            self.status_bar.showMessage("Starting workspace demo - moving to max reach...")
     
     def execute_path_demo(self, positions: List[Tuple[float, float]], name: str):
-        """Execute a path demo"""
+        """Execute a path demo - UPDATED for simple_kinematics.ino format"""
         self.status_bar.showMessage(f"Starting {name} demo...")
         # This would be implemented with a timer to send positions sequentially
         # For now, just send the first position
         if positions and self.serial_comm.is_connected:
             x, y = positions[0]
-            self.serial_comm.send_command(f"MOVE:{x:.1f},{y:.1f}")
+            self.serial_comm.send_command(f"{x:.1f},{y:.1f}")  # Changed from MOVE:x,y to x,y
     
     def stop_demo(self):
-        """Stop current demo"""
+        """Stop current demo - Send HOME command instead of DEMO:STOP"""
         if self.serial_comm.is_connected:
-            self.serial_comm.send_command("DEMO:STOP")
-            self.status_bar.showMessage("Demo stopped")
+            self.serial_comm.send_command("HOME")  # Changed from DEMO:STOP to HOME
+            self.status_bar.showMessage("Demo stopped - returned to HOME")
     
     def move_to_home(self):
         """Move robot to home position"""
@@ -1200,18 +1214,18 @@ class RobotControlGUI(QMainWindow):
         self.status_bar.showMessage("Moving to home position")
     
     def start_calibration(self):
-        """Start servo calibration"""
+        """Start servo calibration - Using individual servo commands"""
         if self.serial_comm.is_connected:
-            offset1 = self.joint1_offset.value()
-            offset2 = self.joint2_offset.value()
-            self.serial_comm.send_command(f"CALIBRATE:{offset1},{offset2}")
-            self.status_bar.showMessage("Starting calibration...")
+            # Instead of CALIBRATE:, send individual servo positions
+            self.serial_comm.send_command("S1,90")  # Center position for servo 1
+            self.serial_comm.send_command("S2,90")  # Center position for servo 2
+            self.status_bar.showMessage("Calibrating - moving servos to center position...")
     
     def emergency_stop(self):
-        """Emergency stop function"""
+        """Emergency stop function - Send HOME command"""
         if self.serial_comm.is_connected:
-            self.serial_comm.send_command("STOP")
-        self.status_bar.showMessage("EMERGENCY STOP ACTIVATED", 5000)
+            self.serial_comm.send_command("HOME")  # Changed from "STOP" to "HOME"
+        self.status_bar.showMessage("EMERGENCY STOP - Returned to HOME position", 5000)
         
         # Show warning dialog
         QMessageBox.critical(self, "Emergency Stop", 
@@ -1267,10 +1281,12 @@ class RobotControlGUI(QMainWindow):
         self.restoreGeometry(self.settings.value("geometry", bytes()))
         self.restoreState(self.settings.value("windowState", bytes()))
         
-        # Load robot configuration
-        self.robot_config.L1 = float(self.settings.value("robot/L1", self.robot_config.L1))
-        self.robot_config.L2 = float(self.settings.value("robot/L2", self.robot_config.L2))
+        # Load robot configuration - FIXED: Force correct values to match Arduino code
+        # Override any old saved settings that might have wrong L1/L2 values
+        self.robot_config.L1 = 10.0  # FORCE: Must match simple_kinematics.ino
+        self.robot_config.L2 = 10.0  # FORCE: Must match simple_kinematics.ino
         
+        # Update GUI to show correct values
         self.l1_spinbox.setValue(self.robot_config.L1)
         self.l2_spinbox.setValue(self.robot_config.L2)
         self.update_robot_config()
@@ -1280,9 +1296,9 @@ class RobotControlGUI(QMainWindow):
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("windowState", self.saveState())
         
-        # Save robot configuration
-        self.settings.setValue("robot/L1", self.robot_config.L1)
-        self.settings.setValue("robot/L2", self.robot_config.L2)
+        # Save robot configuration - FORCE correct values
+        self.settings.setValue("robot/L1", 10.0)  # FORCE: Always save correct values
+        self.settings.setValue("robot/L2", 10.0)  # FORCE: Always save correct values
     
     def closeEvent(self, event):
         """Handle application close"""
