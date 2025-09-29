@@ -114,14 +114,14 @@ DEG2 90
 | Servo Power | 5V | Power supply | Red | External 5V/2A recommended |
 | Servo Ground | GND | Common ground | Brown/Black | Shared with system GND |
 | **MATRIX KEYPAD (4x4)** |
-| Row 1 | GPIO 21 | Keypad row scan | - | Keys: 1,2,3,A |
-| Row 2 | GPIO 19 | Keypad row scan | - | Keys: 4,5,6,B |
-| Row 3 | GPIO 18 | Keypad row scan | - | Keys: 7,8,9,C |
-| Row 4 | GPIO 5 | Keypad row scan | - | Keys: *,0,#,D |
+| Row 1 | GPIO 4 | Keypad row scan | - | Keys: 1,2,3,A |
+| Row 2 | GPIO 5 | Keypad row scan | - | Keys: 4,5,6,B |
+| Row 3 | GPIO 6 | Keypad row scan | - | Keys: 7,8,9,C |
+| Row 4 | GPIO 7 | Keypad row scan | - | Keys: *,0,#,D |
 | Col 1 | GPIO 17 | Keypad column scan | - | Keys: 1,4,7,* |
-| Col 2 | GPIO 16 | Keypad column scan | - | Keys: 2,5,8,0 |
-| Col 3 | GPIO 4 | Keypad column scan | - | Keys: 3,6,9,# |
-| Col 4 | GPIO 0 | Keypad column scan | - | Keys: A,B,C,D |
+| Col 2 | GPIO 18 | Keypad column scan | - | Keys: 2,5,8,0 |
+| Col 3 | GPIO 10 | Keypad column scan | - | Keys: 3,6,9,# |
+| Col 4 | GPIO 11 | Keypad column scan | - | Keys: A,B,C,D |
 | **LCD I2C DISPLAY (16x2)** |
 | SDA | GPIO 8 | I2C Data line | - | Pull-up resistors included |
 | SCL | GPIO 9 | I2C Clock line | - | Pull-up resistors included |
@@ -138,8 +138,8 @@ DEG2 90
    • Servo 2 (Elbow):    Pin 12
 
 📍 KEYPAD MATRIX:
-   • Rows: 21, 19, 18, 5
-   • Cols: 17, 16, 4, 0
+   • Rows: 4, 5, 6, 7
+   • Cols: 17, 18, 10, 11
 
 📍 LCD I2C DISPLAY:
    • SDA: Pin 8  (Data)
@@ -166,7 +166,217 @@ DEG2 90
 - **Y-axis:** Vertical, positive upward
 - **Angles:** Joint 1 measured from X-axis, Joint 2 relative to Link 1
 
-## 🎮 Hardware Mode (MODO HARDWARE)
+## 🎮 MODO HARDWARE - Guía Completa de Uso
+
+### 🔥 **NUEVA CARACTERÍSTICA: CONTROL INDEPENDIENTE**
+El robot ahora puede operar **completamente independiente** sin necesidad de computadora, usando solamente:
+- **Teclado matricial 4x4** para entrada de comandos
+- **Pantalla LCD 16x2** para visualización en tiempo real
+- **Librería LCD_I2C.h de Blackhack** (optimizada para ESP32)
+
+### 📱 **Interfaz de Usuario Hardware**
+
+#### **📺 Pantalla LCD - Formato de Visualización:**
+```
+┌────────────────┐
+│A1:090° A2:000° │  ← Ángulos actuales de articulaciones
+│X:10.0  Y:08.0  │  ← Posición actual del efector final
+└────────────────┘
+```
+
+#### **⌨️ Teclado Matricial - Distribución de Teclas:**
+```
+┌─────┬─────┬─────┬─────┐
+│  1  │  2  │  3  │  A  │  ← A = MODO ÁNGULOS
+├─────┼─────┼─────┼─────┤
+│  4  │  5  │  6  │  B  │  ← B = MODO POSICIÓN
+├─────┼─────┼─────┼─────┤
+│  7  │  8  │  9  │  C  │  ← C = EJECUTAR MOVIMIENTO
+├─────┼─────┼─────┼─────┤
+│  *  │  0  │  #  │  D  │  ← * = BORRAR, # = CONFIRMAR
+└─────┴─────┴─────┴─────┘
+```
+
+### 🎯 **MODO A: Control por Ángulos**
+
+#### **Paso a Paso:**
+1. **Presiona 'A'** → Entra al modo ángulos
+2. **Ingresa θ1** → Ángulo articulación 1 (0-180°)
+3. **Presiona '#'** → Confirma θ1
+4. **Ingresa θ2** → Ángulo articulación 2 (0-180°)
+5. **Presiona '#'** → Confirma θ2 y calcula posición automáticamente
+6. **Presiona 'C'** → Ejecuta el movimiento
+
+#### **Ejemplo de Uso - Modo A:**
+```
+1. Presiona 'A'          → LCD: "MODO A: ANGULOS"
+2. Escribe '9','0'       → LCD: "Ingrese Ang1: 90"
+3. Presiona '#'          → Confirma θ1 = 90°
+4. Escribe '4','5'       → LCD: "Ingrese Ang2: 45"
+5. Presiona '#'          → Calcula posición → LCD actualizada
+6. Presiona 'C'          → Robot se mueve a θ1=90°, θ2=45°
+```
+
+### 🎯 **MODO B: Control por Posición**
+
+#### **Paso a Paso:**
+1. **Presiona 'B'** → Entra al modo posición
+2. **Ingresa X** → Coordenada X (0.0-20.0 cm)
+3. **Presiona '#'** → Confirma X
+4. **Ingresa Y** → Coordenada Y (0.0-20.0 cm)
+5. **Presiona '#'** → Confirma Y y calcula ángulos automáticamente
+6. **Presiona 'C'** → Ejecuta el movimiento
+
+#### **Ejemplo de Uso - Modo B:**
+```
+1. Presiona 'B'            → LCD: "MODO B: POSICION"
+2. Escribe '1','5','.','0' → LCD: "Ingrese X: 15.0"
+3. Presiona '#'            → Confirma X = 15.0 cm
+4. Escribe '1','0','.','0' → LCD: "Ingrese Y: 10.0"
+5. Presiona '#'            → Calcula ángulos → LCD actualizada
+6. Presiona 'C'            → Robot se mueve a (15.0, 10.0)
+```
+
+### ⚡ **Funciones Especiales del Teclado**
+
+| Tecla | Función | Descripción |
+|-------|---------|-------------|
+| **A** | Modo Ángulos | Ingresar θ1, θ2 directamente |
+| **B** | Modo Posición | Ingresar coordenadas X, Y |
+| **C** | Ejecutar | Mover robot con valores actuales |
+| **D** | (Reservado) | Función futura |
+| **#** | Confirmar | Aceptar entrada actual |
+| ***** | Borrar | Eliminar último dígito |
+| **0-9** | Números | Ingresar valores numéricos |
+
+### 🔧 **Características Avanzadas**
+
+#### **✅ Validación Automática:**
+- **Límites de Workspace:** Verifica que (X,Y) sea alcanzable
+- **Límites de Servos:** Garantiza θ1, θ2 entre 0-180°
+- **Cinemática Inversa:** Calcula automáticamente en Modo B
+- **Cinemática Directa:** Calcula automáticamente en Modo A
+
+#### **📊 Retroalimentación en Tiempo Real:**
+- **LCD siempre actualizada** con valores actuales
+- **Mensajes de error** para posiciones inválidas
+- **Confirmación visual** de cada operación
+- **Estadísticas** en Serial Monitor (115200 baudios)
+
+#### **🛡️ Protecciones de Seguridad:**
+- **Anti-rebote** en teclado (200ms)
+- **Límites físicos** de workspace respetados
+- **Verificación de soluciones** de cinemática inversa
+- **Mensajes de error** para entradas inválidas
+
+### 🔌 **Conexiones Hardware Mode**
+
+```
+ESP32-S3 CONEXIONES CRÍTICAS:
+┌─────────────────────────────────┐
+│ SERVOS:                         │
+│  • Servo 1 → Pin 13             │
+│  • Servo 2 → Pin 12             │
+│  • VCC → 5V (fuente externa)    │
+│  • GND → GND                    │
+├─────────────────────────────────┤
+│ TECLADO MATRICIAL:              │
+│  • Filas: 4, 5, 6, 7           │
+│  • Columnas: 17, 18, 10, 11    │
+├─────────────────────────────────┤
+│ LCD I2C:                        │
+│  • SDA → Pin 8                  │
+│  • SCL → Pin 9                  │
+│  • VCC → 5V                     │
+│  • GND → GND                    │
+│  • Dirección: 0x27             │
+└─────────────────────────────────┘
+```
+
+### 📦 **Librerías Requeridas (Hardware Mode)**
+
+```cpp
+// LIBRERÍAS OBLIGATORIAS:
+#include <ESP32Servo.h>         // Control de servos
+#include <Keypad.h>             // Teclado matricial
+#include "LCD_I2C.h"            // ¡IMPORTANTE! Blackhack ESP32 LCD
+
+// INSTALACIÓN:
+// 1. ESP32Servo: Library Manager → "ESP32Servo" 
+// 2. Keypad: Library Manager → "Keypad"
+// 3. LCD_I2C: Library Manager → "ESP32 LiquidCrystal I2C" by Blackhack
+```
+
+### 🚨 **Solución de Problemas - Hardware Mode**
+
+#### **📺 Problemas con LCD:**
+```
+PROBLEMA: LCD no muestra nada
+SOLUCIÓN: 
+1. Verificar dirección I2C (probar 0x3F en lugar de 0x27)
+2. Verificar conexiones SDA/SCL (Pines 8 y 9)
+3. Verificar alimentación 5V estable
+4. Usar scanner I2C para detectar dispositivos
+```
+
+#### **⌨️ Problemas con Teclado:**
+```
+PROBLEMA: Teclado no responde
+SOLUCIÓN:
+1. Verificar conexiones de filas (4,5,6,7)
+2. Verificar conexiones de columnas (17,18,10,11)  
+3. Comprobar que no hay cortos circuitos
+4. Verificar en Serial Monitor si detecta teclas
+```
+
+#### **🤖 Problemas con Movimiento:**
+```
+PROBLEMA: Robot no se mueve o se mueve mal
+SOLUCIÓN:
+1. Verificar servos en pines 13 y 12
+2. Comprobar fuente de alimentación 5V/2A
+3. Verificar que los valores están en rango 0-180°
+4. Revisar conexiones de alimentación de servos
+```
+
+### 📈 **Ejemplo de Sesión Completa**
+
+```
+🔥 SESIÓN DE EJEMPLO - MODO HARDWARE:
+
+1. ENCENDIDO:
+   LCD: "ROBOT 2-DOF"
+        "A:ANG B:POS C:GO"
+
+2. MODO A (Ángulos):
+   Presionar 'A' → "MODO A: ANGULOS"
+   Escribir '90' → "Ingrese Ang1: 90"
+   Presionar '#' → "Ingrese Ang2:"
+   Escribir '45' → "Ingrese Ang2: 45"
+   Presionar '#' → "A1:090° A2:045°"
+                   "X:12.1 Y:11.3"
+   Presionar 'C' → "EJECUTADO!"
+
+3. MODO B (Posición):
+   Presionar 'B' → "MODO B: POSICION"
+   Escribir '15' → "Ingrese X: 15"
+   Presionar '#' → "Ingrese Y:"
+   Escribir '8'  → "Ingrese Y: 8"
+   Presionar '#' → "A1:042° A2:067°"
+                   "X:15.0 Y:08.0"
+   Presionar 'C' → "EJECUTADO!"
+```
+
+### 🎓 **Modo Hardware vs Modo Serial**
+
+| Característica | Hardware Mode | Serial Mode |
+|----------------|---------------|-------------|
+| **Control** | Teclado + LCD | Computadora |
+| **Portabilidad** | ✅ Independiente | ❌ Requiere PC |
+| **Facilidad** | ✅ Muy fácil | ⚠️ Comandos de texto |
+| **Visualización** | ✅ LCD en tiempo real | ⚠️ Solo Serial Monitor |
+| **Precisión** | ✅ Entrada numérica | ✅ Entrada numérica |
+| **Debugging** | ⚠️ Limitado | ✅ Completo |
 
 ### Overview
 The robot now supports standalone operation using a 4x4 matrix keypad and 16x2 LCD display, eliminating the need for a computer connection during operation.
@@ -221,9 +431,9 @@ Line 2: X:XX.X Y:XX.X       [Current end-effector position]
 - **Keys C,D:** Reserved for future features
 
 ### Hardware Mode Installation Steps
-1. **Connect Matrix Keypad:** Wire according to pinout table above
-2. **Connect LCD Display:** Use I2C connection (SDA/SCL + Power)
-3. **Install Libraries:** Ensure Keypad.h and LiquidCrystal_I2C.h are installed
+1. **Connect Matrix Keypad:** Wire according to pinout table above (Rows: 4,5,6,7 | Cols: 17,18,10,11)
+2. **Connect LCD Display:** Use I2C connection (SDA=8, SCL=9 + Power)
+3. **Install Libraries:** Ensure Keypad.h and LCD_I2C.h (Blackhack) are installed
 4. **Upload Code:** Flash the updated firmware with hardware mode
 5. **Test Operation:** Verify keypad response and LCD display
 6. **Calibrate:** Fine-tune I2C address if LCD doesn't respond (try 0x3F)
@@ -248,8 +458,9 @@ Line 2: X:XX.X Y:XX.X       [Current end-effector position]
   - Tools → Manage Libraries → Search "ESP32Servo" → Install
 - **Keypad** by Mark Stanley, Alexander Brevig  
   - Tools → Manage Libraries → Search "Keypad" → Install
-- **LiquidCrystal I2C** by Frank de Brabander
-  - Tools → Manage Libraries → Search "LiquidCrystal I2C" → Install
+- **"ESP32 LiquidCrystal I2C"** by Blackhack (LCD_I2C.h)
+  - Tools → Manage Libraries → Search "ESP32 LiquidCrystal I2C" → Install
+  - ⚠️ **IMPORTANTE:** Usar librería Blackhack, NO la estándar LiquidCrystal_I2C
 
 ### Board Configuration
 - **Board:** ESP32S3 Dev Module (or your specific ESP32-S3 variant)
@@ -536,18 +747,18 @@ ESP32-S3 Development Board
 │  ┌─────┐    ┌─────────────────────┐  │
 │  │ USB │    │       ESP32-S3      │  │  
 │  └─────┘    │                     │  │
-│              │  0○ ← Col4 (Keypad)  │  │
-│              │  4○ ← Col3 (Keypad)  │  │
-│              │  5○ ← Row4 (Keypad)  │  │
+│              │  4○ ← Row1 (Keypad)  │  │
+│              │  5○ ← Row2 (Keypad)  │  │
+│              │  6○ ← Row3 (Keypad)  │  │
+│              │  7○ ← Row4 (Keypad)  │  │
 │              │  8○ ← SDA (LCD)      │  │
 │              │  9○ ← SCL (LCD)      │  │
+│              │ 10○ ← Col3 (Keypad)  │  │
+│              │ 11○ ← Col4 (Keypad)  │  │
 │              │ 12○ ← Servo 2        │  │
 │              │ 13○ ← Servo 1        │  │
-│              │ 16○ ← Col2 (Keypad)  │  │
 │              │ 17○ ← Col1 (Keypad)  │  │
-│              │ 18○ ← Row3 (Keypad)  │  │
-│              │ 19○ ← Row2 (Keypad)  │  │
-│              │ 21○ ← Row1 (Keypad)  │  │
+│              │ 18○ ← Col2 (Keypad)  │  │
 │              │                     │  │
 │              │ 5V○ → Power Rail     │  │
 │              │GND○ → Ground Rail    │  │
@@ -562,15 +773,17 @@ GND → Servos GND, LCD GND, Keypad Common
 ### Connection Checklist
 - [ ] **Servo 1 (Shoulder):** Signal → Pin 13, Power → 5V, Ground → GND
 - [ ] **Servo 2 (Elbow):** Signal → Pin 12, Power → 5V, Ground → GND
-- [ ] **Keypad Rows:** 21, 19, 18, 5 (R1-R4)
-- [ ] **Keypad Columns:** 17, 16, 4, 0 (C1-C4)
+- [ ] **Keypad Rows:** 4, 5, 6, 7 (R1-R4)
+- [ ] **Keypad Columns:** 17, 18, 10, 11 (C1-C4)
 - [ ] **LCD I2C:** SDA → Pin 8, SCL → Pin 9, VCC → 5V, GND → GND
 - [ ] **Power Supply:** External 5V/2A recommended for stable servo operation
-- [ ] **Libraries Installed:** ESP32Servo, Keypad, LiquidCrystal_I2C
+- [ ] **Libraries Installed:** ESP32Servo, Keypad, "ESP32 LiquidCrystal I2C" by Blackhack
 - [ ] **Board Configuration:** ESP32S3 Dev Module selected in Arduino IDE
 
 ---
 
 **Last Updated:** September 2025  
-**Version:** 2.0 (Hardware Mode Implementation)  
-**Tested on:** ESP32-S3 Dev Module with Arduino IDE 2.x
+**Version:** 2.1 (Hardware Mode + Blackhack LCD Implementation)  
+**Tested on:** ESP32-S3 Dev Module with Arduino IDE 2.x  
+**LCD Library:** "ESP32 LiquidCrystal I2C" by Blackhack (LCD_I2C.h)  
+**Hardware Mode:** ✅ Fully Functional with Keypad + LCD Control

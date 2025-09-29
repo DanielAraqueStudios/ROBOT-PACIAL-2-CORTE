@@ -1,3 +1,4 @@
 {
-    "idf.portWin": "COM18"
+    "idf.portWin": "COM18",
+    "cmake.ignoreCMakeListsMissing": true
 }

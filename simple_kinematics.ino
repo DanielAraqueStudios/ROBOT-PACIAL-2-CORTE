@@ -1,7 +1,27 @@
+/*
+ * 🤖 ESP32-S3 2-DOF ROBOT ARM CONTROLLER
+ * =====================================
+ * Control de robot brazo de 2 grados de libertad con:
+ * - Cinemática inversa y directa
+ * - Control por Serial y Hardware (keypad + LCD)
+ * - LCD I2C con librería Blackhack (LCD_I2C.h)
+ * 
+ * LIBRERÍAS REQUERIDAS:
+ * - ESP32Servo
+ * - Keypad
+ * - "ESP32 LiquidCrystal I2C" by Blackhack (LCD_I2C.h)
+ * 
+ * Conexiones:
+ * - Servos: Pines 13 y 12
+ * - Keypad: Filas 4,5,6,7 | Columnas 17,18,10,11  
+ * - LCD I2C: SDA=8, SCL=9, Dirección 0x27
+ */
+
 #include <ESP32Servo.h>
 #include <math.h>
+#include <Wire.h>
 #include <Keypad.h>
-#include <LiquidCrystal_I2C.h>
+#include "LCD_I2C.h"  // ✅ ACTUALIZADO: Blackhack ESP32 LCD_I2C library
 
 Servo joint1;
 Servo joint2;
@@ -20,12 +40,12 @@ char keys[ROWS][COLS] = {
   {'*','0','#','D'}
 };
 // ✅ CORREGIDO: Pines correctos del teclado según README
-byte rowPins[ROWS] = {21, 19, 18, 5}; // Filas: corregido según pinout
-byte colPins[COLS] = {17, 16, 4, 0}; // Columnas: corregido según pinout
+byte rowPins[ROWS] = {4, 5, 6, 7}; // Filas: según documentación README
+byte colPins[COLS] = {17, 18, 10, 11}; // Columnas: según documentación README
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
-// ✅ CORREGIDO: Configuración del LCD I2C (como estaba antes)
-LiquidCrystal_I2C lcd(0x27, 16, 2); // Dirección I2C, 16 columnas, 2 filas
+// ✅ ACTUALIZADO: Configuración del LCD I2C - ESP32 Blackhack Library
+LCD_I2C lcd(0x27, 16, 2); // Dirección fija: 0x27, 16 columnas, 2 filas
 // SDA: Pin 8, SCL: Pin 9 (definido por hardware I2C del ESP32-S3)
 
 // ✅ CORREGIDO: Variables para modo hardware
@@ -46,9 +66,9 @@ float input_x = 10.0;
 float input_y = 10.0;
 
 const float L1 = 10.0;
-const float L2 = 10.0;
-const float MAX_REACH = L1 + L2;
-const float MIN_REACH = abs(L1 - L2);
+const float L2 = 9.0;
+const float MAX_REACH = L1 + L2;  // 10 + 9 = 19 cm
+const float MIN_REACH = abs(L1 - L2);  // |10 - 9| = 1 cm
 
 // ✅ NUEVO: Límites físicos de los servos
 const int SERVO1_MIN = 0;   // Servo 1: 0-180°
@@ -374,14 +394,22 @@ void setup() {
   Serial.println("");
   Serial.println("✅ Workspace: 0-20cm reach, Y >= 0 only");
   
-  // ✅ NUEVO: Inicializar LCD
-  lcd.init();
-  lcd.backlight();
+  // ✅ ACTUALIZADO: Inicializar I2C primero con pines específicos
+  Wire.begin(8, 9); // SDA=8, SCL=9 para ESP32-S3
+  delay(100);
+  
+  // ✅ ACTUALIZADO: Inicializar LCD con Blackhack Library
+  Serial.println("📺 Inicializando LCD con ESP32 Blackhack Library...");
+  lcd.begin();      // Inicializar LCD (Blackhack)
+  lcd.backlight(); // Encender retroiluminación
+  
+  // Mensaje de bienvenida
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("ROBOT 2-DOF");
   lcd.setCursor(0, 1);
   lcd.print("A:ANG B:POS C:GO");
+  Serial.println("✅ LCD inicializado correctamente");
   
   // ✅ Inicializar servos
   joint1.attach(JOINT1_PIN);
