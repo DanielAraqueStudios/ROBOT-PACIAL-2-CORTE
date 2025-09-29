@@ -40,10 +40,10 @@ from PyQt6.QtWidgets import (
     QSplitter, QScrollArea, QMessageBox, QFileDialog, QStatusBar
 )
 from PyQt6.QtCore import (
-    Qt, QTimer, QThread, pyqtSignal, QSettings, QRect, pyqtSlot
+    Qt, QTimer, QThread, pyqtSignal, QSettings, QRect, pyqtSlot, QPoint
 )
 from PyQt6.QtGui import (
-    QFont, QPalette, QColor, QIcon, QPainter, QPen, QBrush, QPixmap
+    QFont, QPalette, QColor, QIcon, QPainter, QPen, QBrush, QPixmap, QPolygonF
 )
 
 # Scientific computing
@@ -51,7 +51,8 @@ import serial
 import serial.tools.list_ports
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.patches as patches
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 @dataclass
@@ -74,6 +75,162 @@ class Position:
     
     def distance_from_origin(self) -> float:
         return math.sqrt(self.x**2 + self.y**2)
+
+class KinematicsCalculator:
+    """Forward and inverse kinematics calculations"""
+    
+    @staticmethod
+    def forward_kinematics(theta1_deg: float, theta2_deg: float, L1: float, L2: float) -> Position:
+        """
+        Calculate end-effector position from joint angles
+        theta1: Base joint angle in degrees
+        theta2: Elbow joint angle in degrees
+        Returns: Position(x, y) in cm
+        """
+        theta1_rad = math.radians(theta1_deg)
+        theta2_rad = math.radians(theta2_deg)
+        
+        x = L1 * math.cos(theta1_rad) + L2 * math.cos(theta1_rad + theta2_rad)
+        y = L1 * math.sin(theta1_rad) + L2 * math.sin(theta1_rad + theta2_rad)
+        
+        return Position(x, y)
+    
+    @staticmethod
+    def inverse_kinematics(target_x: float, target_y: float, L1: float, L2: float) -> tuple:
+        """
+        Calculate joint angles from target position
+        Returns: (theta1_deg, theta2_deg, is_valid)
+        """
+        # Check if position is reachable
+        distance = math.sqrt(target_x**2 + target_y**2)
+        max_reach = L1 + L2
+        min_reach = abs(L1 - L2)
+        
+        if distance > max_reach or distance < min_reach or target_y < 0:
+            return (0, 0, False)
+        
+        # Calculate angles using inverse kinematics
+        try:
+            cos_theta2 = (distance**2 - L1**2 - L2**2) / (2 * L1 * L2)
+            if cos_theta2 < -1 or cos_theta2 > 1:
+                return (0, 0, False)
+                
+            theta2_rad = math.acos(cos_theta2)
+            alpha = math.atan2(target_y, target_x)
+            beta = math.atan2(L2 * math.sin(theta2_rad), L1 + L2 * math.cos(theta2_rad))
+            theta1_rad = alpha - beta
+            
+            theta1_deg = math.degrees(theta1_rad)
+            theta2_deg = math.degrees(theta2_rad)
+            
+            # Normalize angles to 0-360 range, then to 0-180 for servos
+            while theta1_deg < 0:
+                theta1_deg += 360
+            while theta1_deg >= 360:
+                theta1_deg -= 360
+                
+            if theta1_deg > 180:
+                theta1_deg = 360 - theta1_deg
+                
+            # Validate servo ranges
+            if 0 <= theta1_deg <= 180 and 0 <= theta2_deg <= 180:
+                return (theta1_deg, theta2_deg, True)
+            else:
+                return (0, 0, False)
+                
+        except:
+            return (0, 0, False)
+
+class DialControl(QWidget):
+    """Custom circular dial/potentiometer control widget"""
+    
+    valueChanged = pyqtSignal(int)
+    
+    def __init__(self, minimum=0, maximum=180, value=90, title="Servo"):
+        super().__init__()
+        self.minimum = minimum
+        self.maximum = maximum
+        self._value = value
+        self.title = title
+        self.setFixedSize(120, 140)
+        self.setMouseTracking(True)
+        
+    def value(self):
+        return self._value
+        
+    def setValue(self, value):
+        value = max(self.minimum, min(self.maximum, value))
+        if value != self._value:
+            self._value = value
+            self.update()
+            self.valueChanged.emit(value)
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.updateValueFromMouse(event.pos())
+    
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton:
+            self.updateValueFromMouse(event.pos())
+    
+    def updateValueFromMouse(self, pos):
+        center = QPoint(60, 70)  # Center of the dial
+        angle = math.atan2(pos.y() - center.y(), pos.x() - center.x())
+        angle_deg = math.degrees(angle) + 90  # Adjust for vertical starting position
+        
+        # Normalize to 0-360
+        if angle_deg < 0:
+            angle_deg += 360
+        
+        # Convert to value range (0-180 degrees maps to 0-max)
+        if angle_deg <= 180:
+            new_value = int((angle_deg / 180) * (self.maximum - self.minimum) + self.minimum)
+        else:
+            # For angles > 180, map to the remaining range
+            remaining_angle = angle_deg - 180
+            new_value = int(((180 - remaining_angle) / 180) * (self.maximum - self.minimum) + self.minimum)
+        
+        self.setValue(new_value)
+    
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw background circle
+        painter.setPen(QPen(QColor("#555"), 3))
+        painter.setBrush(QBrush(QColor("#2b2b2b")))
+        painter.drawEllipse(10, 10, 100, 100)
+        
+        # Draw value arc
+        painter.setPen(QPen(QColor("#4CAF50"), 4))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        
+        # Calculate sweep angle based on value
+        sweep_angle = int(((self._value - self.minimum) / (self.maximum - self.minimum)) * 180 * 16)
+        painter.drawArc(10, 10, 100, 100, 90 * 16, -sweep_angle)
+        
+        # Draw indicator line
+        angle = math.radians(((self._value - self.minimum) / (self.maximum - self.minimum)) * 180)
+        center_x, center_y = 60, 60
+        line_length = 35
+        end_x = center_x + line_length * math.cos(math.pi/2 - angle)
+        end_y = center_y - line_length * math.sin(math.pi/2 - angle)
+        
+        painter.setPen(QPen(QColor("#FF9800"), 3, Qt.PenStyle.SolidLine))
+        painter.drawLine(center_x, center_y, int(end_x), int(end_y))
+        
+        # Draw center dot
+        painter.setPen(QPen(QColor("#FF9800"), 2))
+        painter.setBrush(QBrush(QColor("#FF9800")))
+        painter.drawEllipse(55, 55, 10, 10)
+        
+        # Draw title and value
+        painter.setPen(QColor("white"))
+        painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        painter.drawText(0, 130, 120, 20, Qt.AlignmentFlag.AlignCenter, self.title)
+        
+        painter.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        painter.drawText(0, 115, 120, 20, Qt.AlignmentFlag.AlignCenter, f"{self._value}°")
 
 class SerialCommunication(QThread):
     """Thread for handling serial communication with ESP32"""
@@ -158,6 +315,19 @@ class WorkspaceCanvas(FigureCanvas):
         self.draw_workspace()
         self.draw_robot()
     
+    def update_robot_state(self, theta1_deg, theta2_deg, end_x, end_y):
+        """Update robot state with new angles and position"""
+        self.current_angles = [theta1_deg, theta2_deg]
+        self.current_position = Position(end_x, end_y)
+        self.draw_robot()
+        self.draw()
+    
+    def set_target_position(self, x, y):
+        """Set target position for visualization"""
+        self.target_position = Position(x, y)
+        self.draw_robot()
+        self.draw()
+    
     def setup_plot(self):
         """Setup plot appearance - UPDATED for simple_kinematics.ino (max_reach=20, Y>=0)"""
         self.ax.set_xlim(-22, 22)  # Increased for max_reach=20
@@ -181,13 +351,13 @@ class WorkspaceCanvas(FigureCanvas):
     def draw_workspace(self):
         """Draw robot workspace boundaries"""
         # Maximum reach circle
-        max_circle = plt.Circle((0, 0), self.robot_config.max_reach, 
-                               fill=False, color='#4CAF50', linewidth=2, alpha=0.7)
+        max_circle = patches.Circle((0, 0), self.robot_config.max_reach, 
+                                  fill=False, color='#4CAF50', linewidth=2, alpha=0.7)
         self.ax.add_patch(max_circle)
         
         # Minimum reach circle
-        min_circle = plt.Circle((0, 0), self.robot_config.min_reach, 
-                               fill=False, color='#F44336', linewidth=2, alpha=0.7)
+        min_circle = patches.Circle((0, 0), self.robot_config.min_reach, 
+                                  fill=False, color='#F44336', linewidth=2, alpha=0.7)
         self.ax.add_patch(min_circle)
         
         # Base point
@@ -539,19 +709,23 @@ class RobotControlGUI(QMainWindow):
         tab_widget = QTabWidget()
         layout.addWidget(tab_widget)
         
-        # Connection tab
+        # Tab 1: Connection + Visualization
         connection_tab = self.create_connection_tab()
         tab_widget.addTab(connection_tab, "🔌 Connection")
         
-        # Manual control tab
-        manual_tab = self.create_manual_control_tab()
-        tab_widget.addTab(manual_tab, "🎮 Manual")
+        # Tab 2: Manual Servo Control + Visualization
+        servo_tab = self.create_servo_control_tab()
+        tab_widget.addTab(servo_tab, "🎛️ Servo Control")
         
-        # Auto control tab
+        # Tab 3: Inverse Kinematics + Visualization
+        kinematics_tab = self.create_kinematics_tab()
+        tab_widget.addTab(kinematics_tab, "📐 Kinematics")
+        
+        # Tab 4: Auto control (keep as is)
         auto_tab = self.create_auto_control_tab()
         tab_widget.addTab(auto_tab, "🤖 Auto")
         
-        # Settings tab
+        # Tab 5: Settings (keep as is)
         settings_tab = self.create_settings_tab()
         tab_widget.addTab(settings_tab, "⚙️ Settings")
         
@@ -619,6 +793,179 @@ class RobotControlGUI(QMainWindow):
         
         monitor_layout.addLayout(cmd_layout)
         layout.addWidget(monitor_group)
+        
+        # Add mini workspace canvas for connection tab
+        mini_canvas_group = QGroupBox("Robot Status Visualization")
+        canvas_layout = QVBoxLayout(mini_canvas_group)
+        self.connection_mini_canvas = WorkspaceCanvas(self.robot_config)
+        self.connection_mini_canvas.setFixedSize(300, 300)
+        canvas_layout.addWidget(self.connection_mini_canvas)
+        layout.addWidget(mini_canvas_group)
+        
+        layout.addStretch()
+        return tab
+    
+    def create_servo_control_tab(self) -> QWidget:
+        """Create servo control tab with dial potentiometers"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # Servo controls group
+        servo_group = QGroupBox("Servo Controls")
+        servo_layout = QHBoxLayout(servo_group)
+        
+        # Joint 1 dial control
+        joint1_layout = QVBoxLayout()
+        self.joint1_dial = DialControl(0, 180, 90, "Joint 1 (Base)")
+        self.joint1_dial.valueChanged.connect(self.joint1_dial_changed)
+        joint1_layout.addWidget(self.joint1_dial)
+        servo_layout.addLayout(joint1_layout)
+        
+        # Joint 2 dial control  
+        joint2_layout = QVBoxLayout()
+        self.joint2_dial = DialControl(0, 180, 90, "Joint 2 (Elbow)")
+        self.joint2_dial.valueChanged.connect(self.joint2_dial_changed)
+        joint2_layout.addWidget(self.joint2_dial)
+        servo_layout.addLayout(joint2_layout)
+        
+        layout.addWidget(servo_group)
+        
+        # Calculated position group
+        position_group = QGroupBox("Calculated Position (Forward Kinematics)")
+        position_layout = QGridLayout(position_group)
+        
+        # Position display
+        self.servo_x_label = QLabel("X: 0.0 cm")
+        self.servo_x_label.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 14px;")
+        position_layout.addWidget(QLabel("X Position:"), 0, 0)
+        position_layout.addWidget(self.servo_x_label, 0, 1)
+        
+        self.servo_y_label = QLabel("Y: 20.0 cm")
+        self.servo_y_label.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 14px;")
+        position_layout.addWidget(QLabel("Y Position:"), 1, 0)
+        position_layout.addWidget(self.servo_y_label, 1, 1)
+        
+        self.servo_distance_label = QLabel("Distance: 20.0 cm")
+        self.servo_distance_label.setStyleSheet("color: #2196F3; font-weight: bold; font-size: 14px;")
+        position_layout.addWidget(QLabel("Distance from origin:"), 2, 0)
+        position_layout.addWidget(self.servo_distance_label, 2, 1)
+        
+        layout.addWidget(position_group)
+        
+        # Quick servo positions
+        quick_group = QGroupBox("Quick Servo Positions")
+        quick_layout = QGridLayout(quick_group)
+        
+        servo_positions = [
+            ("🏠 Home (90°, 90°)", 90, 90),
+            ("⬆️ Straight Up (90°, 0°)", 90, 0),
+            ("👈 Left (45°, 90°)", 45, 90),
+            ("👉 Right (135°, 90°)", 135, 90),
+            ("⬇️ Fold Down (90°, 180°)", 90, 180),
+            ("🔄 Center (90°, 90°)", 90, 90)
+        ]
+        
+        for i, (name, angle1, angle2) in enumerate(servo_positions):
+            btn = QPushButton(name)
+            btn.clicked.connect(lambda checked, a1=angle1, a2=angle2: self.set_servo_angles(a1, a2))
+            quick_layout.addWidget(btn, i // 2, i % 2)
+        
+        layout.addWidget(quick_group)
+        
+        # Add mini workspace canvas for this tab
+        mini_canvas_group = QGroupBox("Robot Position Visualization")
+        canvas_layout = QVBoxLayout(mini_canvas_group)
+        self.servo_mini_canvas = WorkspaceCanvas(self.robot_config)
+        self.servo_mini_canvas.setFixedSize(300, 300)
+        canvas_layout.addWidget(self.servo_mini_canvas)
+        layout.addWidget(mini_canvas_group)
+        
+        layout.addStretch()
+        return tab
+    
+    def create_kinematics_tab(self) -> QWidget:
+        """Create inverse kinematics tab"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # Coordinate input group
+        coord_group = QGroupBox("Target Coordinates (Inverse Kinematics)")
+        coord_layout = QGridLayout(coord_group)
+        
+        # X coordinate input
+        coord_layout.addWidget(QLabel("X Position:"), 0, 0)
+        self.ik_x_input = QDoubleSpinBox()
+        self.ik_x_input.setRange(-20.0, 20.0)
+        self.ik_x_input.setValue(0.0)
+        self.ik_x_input.setDecimals(1)
+        self.ik_x_input.setSuffix(" cm")
+        self.ik_x_input.valueChanged.connect(self.calculate_inverse_kinematics)
+        coord_layout.addWidget(self.ik_x_input, 0, 1)
+        
+        # Y coordinate input (only Y >= 0)
+        coord_layout.addWidget(QLabel("Y Position:"), 1, 0)
+        self.ik_y_input = QDoubleSpinBox()
+        self.ik_y_input.setRange(0.0, 20.0)
+        self.ik_y_input.setValue(15.0)
+        self.ik_y_input.setDecimals(1)
+        self.ik_y_input.setSuffix(" cm")
+        self.ik_y_input.valueChanged.connect(self.calculate_inverse_kinematics)
+        coord_layout.addWidget(self.ik_y_input, 1, 1)
+        
+        # Move button
+        self.ik_move_btn = QPushButton("🎯 Move to Position")
+        self.ik_move_btn.clicked.connect(self.move_to_ik_position)
+        coord_layout.addWidget(self.ik_move_btn, 2, 0, 1, 2)
+        
+        layout.addWidget(coord_group)
+        
+        # Calculated angles group
+        angles_group = QGroupBox("Calculated Joint Angles")
+        angles_layout = QGridLayout(angles_group)
+        
+        self.ik_theta1_label = QLabel("θ1: 90.0°")
+        self.ik_theta1_label.setStyleSheet("color: #FF9800; font-weight: bold; font-size: 14px;")
+        angles_layout.addWidget(QLabel("Joint 1 (Base):"), 0, 0)
+        angles_layout.addWidget(self.ik_theta1_label, 0, 1)
+        
+        self.ik_theta2_label = QLabel("θ2: 45.0°")
+        self.ik_theta2_label.setStyleSheet("color: #FF9800; font-weight: bold; font-size: 14px;")
+        angles_layout.addWidget(QLabel("Joint 2 (Elbow):"), 1, 0)
+        angles_layout.addWidget(self.ik_theta2_label, 1, 1)
+        
+        self.ik_valid_label = QLabel("✅ Position is reachable")
+        self.ik_valid_label.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 12px;")
+        angles_layout.addWidget(self.ik_valid_label, 2, 0, 1, 2)
+        
+        layout.addWidget(angles_group)
+        
+        # Quick target positions
+        targets_group = QGroupBox("Quick Target Positions")
+        targets_layout = QGridLayout(targets_group)
+        
+        target_positions = [
+            ("🏠 Home (0, 20)", 0.0, 20.0),
+            ("👈 Left (-15, 10)", -15.0, 10.0),
+            ("👉 Right (15, 10)", 15.0, 10.0),
+            ("⬆️ High (0, 18)", 0.0, 18.0),
+            ("⬇️ Low (0, 2)", 0.0, 2.0),
+            ("🔄 Center (10, 10)", 10.0, 10.0)
+        ]
+        
+        for i, (name, x, y) in enumerate(target_positions):
+            btn = QPushButton(name)
+            btn.clicked.connect(lambda checked, tx=x, ty=y: self.set_target_position(tx, ty))
+            targets_layout.addWidget(btn, i // 2, i % 2)
+        
+        layout.addWidget(targets_group)
+        
+        # Add mini workspace canvas for this tab
+        mini_canvas_group = QGroupBox("Target Position Visualization")
+        canvas_layout = QVBoxLayout(mini_canvas_group)
+        self.ik_mini_canvas = WorkspaceCanvas(self.robot_config)
+        self.ik_mini_canvas.setFixedSize(300, 300)
+        canvas_layout.addWidget(self.ik_mini_canvas)
+        layout.addWidget(mini_canvas_group)
         
         layout.addStretch()
         return tab
@@ -1023,25 +1370,120 @@ class RobotControlGUI(QMainWindow):
     
     def joint1_changed(self, value):
         """Handle joint 1 slider change"""
-        self.joint1_value.setValue(value)
+        if hasattr(self, 'joint1_value'):
+            self.joint1_value.setValue(value)
         self.update_robot_visualization()
         if self.serial_comm.is_connected:
             self.send_joint_command(1, value)
     
     def joint1_spin_changed(self, value):
         """Handle joint 1 spinbox change"""
-        self.joint1_slider.setValue(value)
+        if hasattr(self, 'joint1_slider'):
+            self.joint1_slider.setValue(value)
     
     def joint2_changed(self, value):
         """Handle joint 2 slider change"""
-        self.joint2_value.setValue(value)
+        if hasattr(self, 'joint2_value'):
+            self.joint2_value.setValue(value)
         self.update_robot_visualization()
         if self.serial_comm.is_connected:
             self.send_joint_command(2, value)
     
     def joint2_spin_changed(self, value):
         """Handle joint 2 spinbox change"""
-        self.joint2_slider.setValue(value)
+        if hasattr(self, 'joint2_slider'):
+            self.joint2_slider.setValue(value)
+    
+    # New methods for servo control tab
+    def joint1_dial_changed(self, value):
+        """Handle joint 1 dial change"""
+        self.update_servo_position_display()
+        self.update_robot_visualization()
+        if self.serial_comm.is_connected:
+            self.send_joint_command(1, value)
+    
+    def joint2_dial_changed(self, value):
+        """Handle joint 2 dial change"""
+        self.update_servo_position_display()
+        self.update_robot_visualization()
+        if self.serial_comm.is_connected:
+            self.send_joint_command(2, value)
+    
+    def update_servo_position_display(self):
+        """Update calculated position display in servo tab"""
+        theta1 = self.joint1_dial.value()
+        theta2 = self.joint2_dial.value()
+        
+        # Calculate forward kinematics
+        position = KinematicsCalculator.forward_kinematics(
+            theta1, theta2, self.robot_config.L1, self.robot_config.L2
+        )
+        
+        distance = position.distance_from_origin()
+        
+        # Update labels
+        self.servo_x_label.setText(f"X: {position.x:.1f} cm")
+        self.servo_y_label.setText(f"Y: {position.y:.1f} cm")
+        self.servo_distance_label.setText(f"Distance: {distance:.1f} cm")
+        
+        # Update mini canvas
+        if hasattr(self, 'servo_mini_canvas'):
+            self.servo_mini_canvas.update_robot_state(theta1, theta2, position.x, position.y)
+    
+    def set_servo_angles(self, angle1, angle2):
+        """Set both servo angles"""
+        self.joint1_dial.setValue(angle1)
+        self.joint2_dial.setValue(angle2)
+        self.update_servo_position_display()
+    
+    # New methods for inverse kinematics tab
+    def calculate_inverse_kinematics(self):
+        """Calculate and display inverse kinematics"""
+        x = self.ik_x_input.value()
+        y = self.ik_y_input.value()
+        
+        theta1, theta2, is_valid = KinematicsCalculator.inverse_kinematics(
+            x, y, self.robot_config.L1, self.robot_config.L2
+        )
+        
+        # Update angle displays
+        self.ik_theta1_label.setText(f"θ1: {theta1:.1f}°")
+        self.ik_theta2_label.setText(f"θ2: {theta2:.1f}°")
+        
+        # Update validity indicator
+        if is_valid:
+            self.ik_valid_label.setText("✅ Position is reachable")
+            self.ik_valid_label.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 12px;")
+            self.ik_move_btn.setEnabled(True)
+        else:
+            self.ik_valid_label.setText("❌ Position not reachable")
+            self.ik_valid_label.setStyleSheet("color: #F44336; font-weight: bold; font-size: 12px;")
+            self.ik_move_btn.setEnabled(False)
+        
+        # Update mini canvas
+        if hasattr(self, 'ik_mini_canvas'):
+            if is_valid:
+                self.ik_mini_canvas.update_robot_state(theta1, theta2, x, y)
+            else:
+                self.ik_mini_canvas.set_target_position(x, y)
+    
+    def move_to_ik_position(self):
+        """Move robot to calculated IK position"""
+        x = self.ik_x_input.value()
+        y = self.ik_y_input.value()
+        
+        if self.serial_comm.is_connected:
+            command = f"{x:.1f},{y:.1f}"
+            self.serial_comm.send_command(command)
+        
+        # Update main visualization
+        self.workspace_canvas.set_target_position(x, y)
+    
+    def set_target_position(self, x, y):
+        """Set target position in IK tab"""
+        self.ik_x_input.setValue(x)
+        self.ik_y_input.setValue(y)
+        self.calculate_inverse_kinematics()
     
     def send_joint_command(self, joint: int, angle: int):
         """Send joint angle command to robot - Updated for simple_kinematics.ino format"""
@@ -1083,10 +1525,28 @@ class RobotControlGUI(QMainWindow):
         self.move_to_position()
     
     def update_robot_visualization(self):
-        """Update robot visualization"""
-        theta1 = self.joint1_value.value()
-        theta2 = self.joint2_value.value()
-        self.workspace_canvas.update_robot_angles(theta1, theta2)
+        """Update robot visualization - works with both old and new controls"""
+        # Try to get values from dial controls first (new interface)
+        if hasattr(self, 'joint1_dial') and hasattr(self, 'joint2_dial'):
+            theta1 = self.joint1_dial.value()
+            theta2 = self.joint2_dial.value()
+            
+            # Calculate forward kinematics for position
+            position = KinematicsCalculator.forward_kinematics(
+                theta1, theta2, self.robot_config.L1, self.robot_config.L2
+            )
+            
+            # Update main workspace canvas if it exists
+            if hasattr(self, 'workspace_canvas'):
+                self.workspace_canvas.update_robot_state(theta1, theta2, position.x, position.y)
+        
+        # Fallback for old controls
+        elif hasattr(self, 'joint1_value') and hasattr(self, 'joint2_value'):
+            theta1 = self.joint1_value.value()
+            theta2 = self.joint2_value.value()
+            
+            if hasattr(self, 'workspace_canvas'):
+                self.workspace_canvas.update_robot_angles(theta1, theta2)
     
     def update_robot_config(self):
         """Update robot configuration"""
@@ -1159,7 +1619,7 @@ class RobotControlGUI(QMainWindow):
     
     def start_square_demo(self):
         """Start square path demo - Updated positions for Y >= 0"""
-        positions = [(10, 10), (15, 10), (15, 15), (10, 15), (10, 10)]
+        positions = [(10.0, 10.0), (15.0, 10.0), (15.0, 15.0), (10.0, 15.0), (10.0, 10.0)]
         self.execute_path_demo(positions, "Square Path")
     
     def start_circle_demo(self):
